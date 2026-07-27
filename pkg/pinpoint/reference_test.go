@@ -5,6 +5,73 @@ package pinpoint
 
 import "testing"
 
+func TestReferenceParts(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		ref        Reference
+		owner      string
+		repository string
+		version    string
+	}{
+		{
+			name:       "action",
+			ref:        Reference{Uses: "actions/setup-go@v6", Kind: KindAction},
+			owner:      "actions",
+			repository: "actions/setup-go",
+			version:    "v6",
+		},
+		{
+			name:       "action in subdirectory",
+			ref:        Reference{Uses: "carabiner-dev/actions/unpack/sbom@main", Kind: KindAction},
+			owner:      "carabiner-dev",
+			repository: "carabiner-dev/actions",
+			version:    "main",
+		},
+		{
+			name:       "reusable workflow",
+			ref:        Reference{Uses: "example/workflows/.github/workflows/release.yml@main", Kind: KindReusableWorkflow},
+			owner:      "example",
+			repository: "example/workflows",
+			version:    "main",
+		},
+		{
+			name:       "unversioned action",
+			ref:        Reference{Uses: "actions/checkout", Kind: KindAction},
+			owner:      "actions",
+			repository: "actions/checkout",
+			version:    "",
+		},
+		{
+			name:       "container",
+			ref:        Reference{Uses: "docker://alpine@sha256:beef", Kind: KindContainer},
+			owner:      "",
+			repository: "",
+			version:    "sha256:beef",
+		},
+		{
+			name:       "local",
+			ref:        Reference{Uses: "./.github/actions/local-action", Kind: KindLocal},
+			owner:      "",
+			repository: "",
+			version:    "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.ref.Owner(); got != tc.owner {
+				t.Errorf("Owner() = %q, want %q", got, tc.owner)
+			}
+			if got := tc.ref.Repository(); got != tc.repository {
+				t.Errorf("Repository() = %q, want %q", got, tc.repository)
+			}
+			if got := tc.ref.Version(); got != tc.version {
+				t.Errorf("Version() = %q, want %q", got, tc.version)
+			}
+		})
+	}
+}
+
 func TestIsPinned(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

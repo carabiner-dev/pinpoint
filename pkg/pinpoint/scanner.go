@@ -63,6 +63,7 @@ func (s *Scanner) Scan(root string) (*Report, error) {
 		for i := range refs {
 			refs[i].Workflow = wfPath
 		}
+		report.Workflows = append(report.Workflows, wfPath)
 		report.References = append(report.References, refs...)
 	}
 

@@ -5,6 +5,11 @@ package pinpoint
 
 // Report holds the action references collected when scanning a repository.
 type Report struct {
+	// Workflows lists the paths of the workflow files that were scanned,
+	// relative to the scan root, including those with no references.
+	Workflows []string
+
+	// References are all the action references found in the workflows.
 	References []Reference
 }
 

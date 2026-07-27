@@ -30,6 +30,13 @@ listing the workflow, job, step and action reference of each one.
 
 The directory to scan can be specified as the first argument. The
 command exits with an error if any unpinned references are found.
+
+Using --attest, pinpoint writes the full scan results (both the pinned
+and unpinned references) as an unsigned in-toto attestation instead of
+the table. The subject of the attestation is the scanned repository at
+its current commit. Attestations are data, not verdicts, so the command
+exits cleanly when generating one, leaving the pass/fail decision to
+whoever evaluates it.
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,6 +51,10 @@ command exits with an error if any unpinned references are found.
 			report, err := pinpoint.NewScanner().Scan(opts.Path)
 			if err != nil {
 				return err
+			}
+
+			if opts.Attest {
+				return writeAttestation(cmd.OutOrStdout(), report, opts.Path)
 			}
 
 			unpinned := report.Unpinned()
@@ -62,6 +73,30 @@ command exits with an error if any unpinned references are found.
 	}
 	opts.AddFlags(checkCmd)
 	parent.AddCommand(checkCmd)
+}
+
+// writeAttestation renders the scan results as an in-toto attestation
+// vouching for the repository found at path at its current commit.
+func writeAttestation(w io.Writer, report *pinpoint.Report, path string) error {
+	subject, err := pinpoint.SubjectFromRepository(path)
+	if err != nil {
+		return fmt.Errorf("defining attestation subject: %w", err)
+	}
+
+	statement, err := report.Statement(subject)
+	if err != nil {
+		return err
+	}
+
+	data, err := pinpoint.MarshalStatement(statement)
+	if err != nil {
+		return err
+	}
+
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("writing attestation: %w", err)
+	}
+	return nil
 }
 
 // maxJobWidth caps the width of the job column so that a workflow with

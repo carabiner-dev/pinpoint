@@ -38,9 +38,14 @@ func parseWorkflow(data []byte) ([]Reference, error) {
 
 		// Job level uses entry (a reusable workflow call)
 		if uses := mapValue(job, "uses"); uses != nil && uses.Kind == yaml.ScalarNode {
+			kind := KindReusableWorkflow
+			if classify(uses.Value) == KindLocal {
+				kind = KindLocal
+			}
 			refs = append(refs, Reference{
 				Job:  jobID,
 				Uses: uses.Value,
+				Kind: kind,
 				Line: uses.Line,
 			})
 		}
@@ -66,6 +71,7 @@ func parseWorkflow(data []byte) ([]Reference, error) {
 				Job:  jobID,
 				Step: name,
 				Uses: uses.Value,
+				Kind: classify(uses.Value),
 				Line: uses.Line,
 			})
 		}

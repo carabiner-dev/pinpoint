@@ -19,15 +19,20 @@ func TestScan(t *testing.T) {
 	}
 
 	expected := []Reference{
-		{Workflow: wf, Job: "build", Step: "Checkout code", Uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8", Line: 12},
-		{Workflow: wf, Job: "build", Step: "Setup go", Uses: "actions/setup-go@v6", Line: 14},
-		{Workflow: wf, Job: "build", Uses: "./.github/actions/local-action", Line: 17},
-		{Workflow: wf, Job: "build", Step: "pinned-docker", Uses: "docker://alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d", Line: 19},
-		{Workflow: wf, Job: "build", Step: "Unpinned docker", Uses: "docker://alpine:3.22", Line: 21},
-		{Workflow: wf, Job: "release", Uses: "example/workflows/.github/workflows/release.yml@main", Line: 24},
+		{Workflow: wf, Job: "build", Step: "Checkout code", Uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8", Kind: KindAction, Line: 12},
+		{Workflow: wf, Job: "build", Step: "Setup go", Uses: "actions/setup-go@v6", Kind: KindAction, Line: 14},
+		{Workflow: wf, Job: "build", Uses: "./.github/actions/local-action", Kind: KindLocal, Line: 17},
+		{Workflow: wf, Job: "build", Step: "pinned-docker", Uses: "docker://alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d", Kind: KindContainer, Line: 19},
+		{Workflow: wf, Job: "build", Step: "Unpinned docker", Uses: "docker://alpine:3.22", Kind: KindContainer, Line: 21},
+		{Workflow: wf, Job: "release", Uses: "example/workflows/.github/workflows/release.yml@main", Kind: KindReusableWorkflow, Line: 24},
 	}
 	if !reflect.DeepEqual(report.References, expected) {
 		t.Errorf("unexpected references:\n got: %+v\nwant: %+v", report.References, expected)
+	}
+
+	expectedWorkflows := []string{wf}
+	if !reflect.DeepEqual(report.Workflows, expectedWorkflows) {
+		t.Errorf("scanned workflows = %+v, want %+v", report.Workflows, expectedWorkflows)
 	}
 
 	unpinned := report.Unpinned()

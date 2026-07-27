@@ -23,6 +23,10 @@ type Scan struct {
 	// Path is the directory pinpoint looks in for workflows. It is read
 	// from the command arguments, not from a flag.
 	Path string
+
+	// Attest makes pinpoint write the scan results as an in-toto
+	// attestation instead of the human readable output.
+	Attest bool
 }
 
 // Config returns the flag configuration of the scanner options.
@@ -36,7 +40,12 @@ func (so *Scan) Config() *command.OptionsSetConfig {
 }
 
 // AddFlags adds the scanner flags to a command.
-func (so *Scan) AddFlags(_ *cobra.Command) {}
+func (so *Scan) AddFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVarP(
+		&so.Attest, "attest", "a", false,
+		"write the results as an (unsigned) in-toto attestation",
+	)
+}
 
 // Validate checks that the scanner options are usable.
 func (so *Scan) Validate() error {
