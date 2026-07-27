@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Setup go
+        uses: actions/setup-go@v6
+      - name: Run tests
+        run: go test ./...
+      - uses: ./.github/actions/local-action
+      - id: pinned-docker
+        uses: docker://alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d
+      - name: Unpinned docker
+        uses: docker://alpine:3.22
+
+  release:
+    uses: example/workflows/.github/workflows/release.yml@main
