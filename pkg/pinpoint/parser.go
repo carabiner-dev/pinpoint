@@ -50,33 +50,62 @@ func parseWorkflow(data []byte) ([]Reference, error) {
 			})
 		}
 
-		steps := mapValue(job, "steps")
-		if steps == nil || steps.Kind != yaml.SequenceNode {
-			continue
-		}
-		for _, step := range steps.Content {
-			step = resolve(step)
-			if step == nil || step.Kind != yaml.MappingNode {
-				continue
-			}
-			uses := mapValue(step, "uses")
-			if uses == nil || uses.Kind != yaml.ScalarNode {
-				continue
-			}
-			name := scalarValue(step, "name")
-			if name == "" {
-				name = scalarValue(step, "id")
-			}
-			refs = append(refs, Reference{
-				Job:  jobID,
-				Step: name,
-				Uses: uses.Value,
-				Kind: classify(uses.Value),
-				Line: uses.Line,
-			})
-		}
+		refs = append(refs, parseSteps(mapValue(job, "steps"), jobID)...)
 	}
 	return refs, nil
+}
+
+// parseAction reads the YAML source of an action definition and returns the
+// action references used by its steps. Only composite actions run steps, any
+// other action kind yields no references.
+func parseAction(data []byte) ([]Reference, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parsing action YAML: %w", err)
+	}
+
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil, nil
+	}
+
+	runs := mapValue(doc.Content[0], "runs")
+	if runs == nil || runs.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+
+	return parseSteps(mapValue(runs, "steps"), ""), nil
+}
+
+// parseSteps returns the references used by the steps in a YAML sequence,
+// attributed to jobID.
+func parseSteps(steps *yaml.Node, jobID string) []Reference {
+	if steps == nil || steps.Kind != yaml.SequenceNode {
+		return nil
+	}
+
+	var refs []Reference
+	for _, step := range steps.Content {
+		step = resolve(step)
+		if step == nil || step.Kind != yaml.MappingNode {
+			continue
+		}
+		uses := mapValue(step, "uses")
+		if uses == nil || uses.Kind != yaml.ScalarNode {
+			continue
+		}
+		name := scalarValue(step, "name")
+		if name == "" {
+			name = scalarValue(step, "id")
+		}
+		refs = append(refs, Reference{
+			Job:  jobID,
+			Step: name,
+			Uses: uses.Value,
+			Kind: classify(uses.Value),
+			Line: uses.Line,
+		})
+	}
+	return refs
 }
 
 // mapValue returns the value of key in a YAML mapping node, nil if the key

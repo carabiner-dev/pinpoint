@@ -3,7 +3,9 @@ module github.com/carabiner-dev/pinpoint
 go 1.26.5
 
 require (
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/carabiner-dev/command v0.3.1
+	github.com/carabiner-dev/github v0.2.3
 	github.com/carabiner-dev/termtable v1.1.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/in-toto/attestation v1.2.0
@@ -44,6 +46,7 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect

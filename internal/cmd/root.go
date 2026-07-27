@@ -38,6 +38,7 @@ the reusable actions that are not pinned to commit hashes.
 	}
 	logOpts.AddFlags(rootCmd)
 	addCheck(rootCmd)
+	addPin(rootCmd)
 
 	return rootCmd.Execute()
 }

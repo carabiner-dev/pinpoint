@@ -9,7 +9,11 @@ type Report struct {
 	// relative to the scan root, including those with no references.
 	Workflows []string
 
-	// References are all the action references found in the workflows.
+	// Actions lists the paths of the action definitions that were scanned.
+	// It is only populated by scanners created with WithActions.
+	Actions []string
+
+	// References are all the action references found in the scanned files.
 	References []Reference
 }
 

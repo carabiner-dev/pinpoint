@@ -51,6 +51,52 @@ func TestScan(t *testing.T) {
 	}
 }
 
+func TestScanActions(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("testdata", "repo")
+	action := filepath.Join(".github", "actions", "local-action", "action.yml")
+
+	// Action definitions are only read by scanners asked to include them.
+	report, err := NewScanner().Scan(root)
+	if err != nil {
+		t.Fatalf("scanning test repo: %v", err)
+	}
+	if len(report.Actions) != 0 {
+		t.Errorf("actions scanned without WithActions: %+v", report.Actions)
+	}
+
+	report, err = NewScanner(WithActions(true)).Scan(root)
+	if err != nil {
+		t.Fatalf("scanning test repo with actions: %v", err)
+	}
+
+	expectedActions := []string{action}
+	if !reflect.DeepEqual(report.Actions, expectedActions) {
+		t.Errorf("scanned actions = %+v, want %+v", report.Actions, expectedActions)
+	}
+
+	expected := Reference{
+		Workflow: action,
+		Step:     "Setup node",
+		Uses:     "actions/setup-node@v4",
+		Kind:     KindAction,
+		Line:     7,
+	}
+
+	var found []Reference
+	for _, ref := range report.References {
+		if ref.Workflow == action {
+			found = append(found, ref)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 reference from the action definition, got %+v", found)
+	}
+	if !reflect.DeepEqual(found[0], expected) {
+		t.Errorf("action reference:\n got: %+v\nwant: %+v", found[0], expected)
+	}
+}
+
 func TestScanNoWorkflows(t *testing.T) {
 	t.Parallel()
 	report, err := NewScanner().Scan(t.TempDir())

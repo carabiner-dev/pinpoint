@@ -16,7 +16,7 @@ import (
 )
 
 func addCheck(parent *cobra.Command) {
-	opts := &options.Scan{}
+	opts := &options.Check{}
 
 	checkCmd := &cobra.Command{
 		Use:   "check [path]",
@@ -99,13 +99,7 @@ func writeAttestation(w io.Writer, report *pinpoint.Report, path string) error {
 	return nil
 }
 
-// maxJobWidth caps the width of the job column so that a workflow with
-// unusually long job IDs does not starve the rest of the table.
-const maxJobWidth = 24
-
-// writeTable renders the unpinned references as a table. The workflow paths
-// are trimmed from the left when they don't fit the column as the tail (the
-// workflow file name) is the part that identifies them.
+// writeTable renders the unpinned references as a table.
 func writeTable(w io.Writer, refs []pinpoint.Reference) error {
 	t := termtable.NewTable()
 
@@ -115,19 +109,18 @@ func writeTable(w io.Writer, refs []pinpoint.Reference) error {
 	head.AddCell(termtable.WithContent("Job"))
 	head.AddCell(termtable.WithContent("Action"))
 
-	// Keep every finding on a single line. The workflow path loses its head
-	// when it overflows, the rest of the columns are trimmed at the tail.
-	t.Column(0).Style("white-space: nowrap; text-overflow-position: start; flex: 2")
+	// Keep every finding on a single line, trimming the ones that overflow.
+	styleFileColumn(t, 0)
 	t.Column(1).SetAlign(termtable.AlignRight)
 	t.Column(2).Style("white-space: nowrap")
 	t.Column(3).Style("white-space: nowrap; flex: 3")
 
-	lineWidth := termtable.DisplayWidth("Line")
-	jobWidth := termtable.DisplayWidth("Job")
+	lines := make([]string, 0, len(refs))
+	jobs := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		line := strconv.Itoa(ref.Line)
-		lineWidth = max(lineWidth, termtable.DisplayWidth(line))
-		jobWidth = max(jobWidth, termtable.DisplayWidth(ref.Job))
+		lines = append(lines, line)
+		jobs = append(jobs, ref.Job)
 
 		row := t.AddRow()
 		row.AddCell(termtable.WithContent(ref.Workflow))
@@ -138,8 +131,8 @@ func writeTable(w io.Writer, refs []pinpoint.Reference) error {
 
 	// Line numbers and job IDs are short, pin their columns to their widest
 	// value so the whole budget goes to the workflow and action columns.
-	t.Column(1).SetWidth(lineWidth)
-	t.Column(2).SetWidth(min(jobWidth, maxJobWidth))
+	t.Column(1).SetWidth(narrowWidth("Line", lines...))
+	t.Column(2).SetWidth(narrowWidth("Job", jobs...))
 
 	if _, err := fmt.Fprint(w, t.String()); err != nil {
 		return fmt.Errorf("writing findings table: %w", err)

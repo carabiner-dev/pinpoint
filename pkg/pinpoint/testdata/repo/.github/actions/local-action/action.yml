@@ -1,0 +1,10 @@
+name: local-action
+description: A composite action used to test the action scanner
+runs:
+  using: composite
+  steps:
+    - name: Setup node
+      uses: actions/setup-node@v4
+      shell: bash
+    - run: echo hello
+      shell: bash
