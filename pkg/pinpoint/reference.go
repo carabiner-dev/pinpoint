@@ -79,9 +79,7 @@ func (r *Reference) Version() string {
 // action or workflow. It returns an empty string for references that don't
 // live in a repository (local and container actions).
 func (r *Reference) Repository() string {
-	switch r.Kind {
-	case KindAction, KindReusableWorkflow:
-	default:
+	if r.Kind != KindAction && r.Kind != KindReusableWorkflow {
 		return ""
 	}
 
