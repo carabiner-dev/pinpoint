@@ -4,8 +4,13 @@
 package pinpoint
 
 import (
+	"fmt"
 	"runtime/debug"
 	"time"
+
+	gointoto "github.com/in-toto/attestation/go/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -21,8 +26,10 @@ const (
 // references. It carries every reference found, pinned or not, so that
 // policies can reason about more than just the pinning status.
 type Predicate struct {
-	// Tool identifies the scanner that produced the results.
-	Tool PredicateTool `json:"tool"`
+	// Tool identifies the scanner that produced the results. The version is
+	// carried in the descriptor annotations, the in-toto resource has no
+	// field for it.
+	Tool ToolDescriptor `json:"tool"`
 
 	// Date is the RFC3339 timestamp of the scan.
 	Date string `json:"date"`
@@ -42,11 +49,53 @@ type Predicate struct {
 	References []PredicateReference `json:"references"`
 }
 
-// PredicateTool identifies the scanner that generated a predicate.
-type PredicateTool struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	URI     string `json:"uri"`
+// toolName is the name pinpoint identifies itself with in the predicate.
+const toolName = "pinpoint"
+
+// ToolDescriptor is the in-toto resource describing the scanner. It is the
+// official ResourceDescriptor, wrapped only to render it through protojson:
+// the JSON tags of the generated Go type spell some fields in snake case
+// while the in-toto specification writes them in camel case.
+type ToolDescriptor struct {
+	*gointoto.ResourceDescriptor
+}
+
+// MarshalJSON renders the descriptor as in-toto defines it.
+func (t ToolDescriptor) MarshalJSON() ([]byte, error) {
+	data, err := protojson.Marshal(t.ResourceDescriptor)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling tool descriptor: %w", err)
+	}
+	return data, nil
+}
+
+// UnmarshalJSON reads a descriptor rendered as in-toto defines it.
+func (t *ToolDescriptor) UnmarshalJSON(data []byte) error {
+	descriptor := &gointoto.ResourceDescriptor{}
+	if err := protojson.Unmarshal(data, descriptor); err != nil {
+		return fmt.Errorf("unmarshaling tool descriptor: %w", err)
+	}
+	t.ResourceDescriptor = descriptor
+	return nil
+}
+
+// toolDescriptor describes the pinpoint build generating an attestation as
+// an in-toto resource. The version goes in the annotations, the resource
+// descriptor has no field of its own for it.
+func toolDescriptor() ToolDescriptor {
+	descriptor := &gointoto.ResourceDescriptor{
+		Name: toolName,
+		Uri:  toolURI,
+	}
+
+	annotations, err := structpb.NewStruct(map[string]any{"version": toolVersion()})
+	if err != nil {
+		// The only value is a string, this cannot fail, but a predicate
+		// without the version is better than no predicate at all.
+		return ToolDescriptor{descriptor}
+	}
+	descriptor.Annotations = annotations
+	return ToolDescriptor{descriptor}
 }
 
 // PredicateSummary counts the findings of a scan. It lets policies check the
@@ -119,11 +168,7 @@ type PredicateReference struct {
 // up, a nil updates set marks the predicate as not carrying them.
 func (r *Report) Predicate(updates *Updates) *Predicate {
 	p := &Predicate{
-		Tool: PredicateTool{
-			Name:    "pinpoint",
-			Version: toolVersion(),
-			URI:     toolURI,
-		},
+		Tool:           toolDescriptor(),
 		Date:           time.Now().UTC().Format(time.RFC3339),
 		UpdatesChecked: updates != nil,
 		Workflows:      []string{},

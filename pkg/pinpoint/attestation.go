@@ -5,6 +5,7 @@ package pinpoint
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,10 +57,18 @@ func MarshalStatement(statement *gointoto.Statement) ([]byte, error) {
 	return indented.Bytes(), nil
 }
 
+// githubHost is the only forge pinpoint knows how to ask about forks.
+const githubHost = "github.com"
+
 // SubjectFromRepository builds the in-toto subject describing the repository
 // at path (or the first one found walking up from it) at the commit it
 // currently has checked out.
-func SubjectFromRepository(path string) (*gointoto.ResourceDescriptor, error) {
+//
+// Scans commonly run in a fork, which is not the repository the code belongs
+// to. When a resolver is received, the subject names the project the fork was
+// created from and records the fork it was scanned in as an annotation. Pass
+// a nil resolver to name the repository as the local remote has it.
+func SubjectFromRepository(ctx context.Context, path string, resolver SourceResolver) (*gointoto.ResourceDescriptor, error) {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
 		return nil, fmt.Errorf("opening git repository: %w", err)
@@ -78,14 +87,51 @@ func SubjectFromRepository(path string) (*gointoto.ResourceDescriptor, error) {
 	// The repository location comes from the origin remote. Repositories
 	// without one are still attestable, they just get a subject that is
 	// identified by its commit alone.
-	location, err := originLocation(repo)
+	scanned, err := originLocation(repo)
 	if err != nil {
 		return subject, nil //nolint:nilerr // an unlocatable repo is not an error
 	}
 
+	location := sourceLocation(ctx, resolver, scanned)
 	subject.Name = fmt.Sprintf("%s@%s", location, commit)
-	subject.Uri = fmt.Sprintf("git+https://%s@%s", location, commit)
+	subject.Uri = repositoryURI(location, commit)
+
+	// Note the fork the scan ran in, the subject no longer names it.
+	if location != scanned {
+		annotations, err := structpb.NewStruct(map[string]any{
+			"fork": repositoryURI(scanned, commit),
+		})
+		if err == nil {
+			subject.Annotations = annotations
+		}
+	}
+
 	return subject, nil
+}
+
+// sourceLocation returns the location of the repository a fork was created
+// from. Locations outside GitHub, and lookups that don't answer, are returned
+// unchanged: naming the repository we scanned beats failing to attest it.
+func sourceLocation(ctx context.Context, resolver SourceResolver, location string) string {
+	if resolver == nil {
+		return location
+	}
+
+	host, repository, ok := strings.Cut(location, "/")
+	if !ok || host != githubHost {
+		return location
+	}
+
+	source, err := resolver.SourceRepository(ctx, repository)
+	if err != nil || source == "" {
+		return location
+	}
+	return host + "/" + source
+}
+
+// repositoryURI returns the VCS locator of a repository at a commit.
+func repositoryURI(location, commit string) string {
+	return fmt.Sprintf("git+https://%s@%s", location, commit)
 }
 
 // originLocation returns the hostname and path of a repository's origin

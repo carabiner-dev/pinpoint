@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	gointoto "github.com/in-toto/attestation/go/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestPredicate(t *testing.T) {
@@ -47,6 +50,43 @@ func TestPredicate(t *testing.T) {
 	}
 	if predicate.References[0] != expectedFirst {
 		t.Errorf("first reference = %+v, want %+v", predicate.References[0], expectedFirst)
+	}
+}
+
+// TestPredicateTool checks that the tool section is a resource descriptor
+// that in-toto tooling can read back, version included.
+func TestPredicateTool(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal((&Report{}).Predicate(nil))
+	if err != nil {
+		t.Fatalf("marshaling predicate: %v", err)
+	}
+
+	var decoded struct {
+		Tool json.RawMessage `json:"tool"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshaling predicate: %v", err)
+	}
+
+	descriptor := &gointoto.ResourceDescriptor{}
+	if err := protojson.Unmarshal(decoded.Tool, descriptor); err != nil {
+		t.Fatalf("the tool section is not a resource descriptor: %v", err)
+	}
+	if err := descriptor.Validate(); err != nil {
+		t.Errorf("tool descriptor does not validate: %v", err)
+	}
+
+	if descriptor.GetName() != toolName {
+		t.Errorf("tool name = %q, want %q", descriptor.GetName(), toolName)
+	}
+	if descriptor.GetUri() != toolURI {
+		t.Errorf("tool uri = %q, want %q", descriptor.GetUri(), toolURI)
+	}
+
+	version := descriptor.GetAnnotations().GetFields()["version"].GetStringValue()
+	if version != toolVersion() {
+		t.Errorf("tool version = %q, want %q", version, toolVersion())
 	}
 }
 

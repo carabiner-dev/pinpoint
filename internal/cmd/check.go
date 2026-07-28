@@ -46,6 +46,12 @@ its current commit. Attestations are data, not verdicts, so the command
 exits cleanly when generating one, leaving the pass/fail decision to
 whoever evaluates it.
 
+Scans often run in a fork, which is not the project the code belongs to.
+Pinpoint asks the forge which repository a fork was created from and
+names that one in the subject, noting the fork it read the workflows
+from in the subject annotations. With --updates=false the subject names
+the repository as the local origin remote has it.
+
 Versions are read from the GitHub API. Export a token in GITHUB_TOKEN
 to raise the rate limit applied to the lookups.
 `,
@@ -64,16 +70,26 @@ to raise the rate limit applied to the lookups.
 				return err
 			}
 
-			var updates *pinpoint.Updates
+			// One resolver serves the version lookups and the search for
+			// the repository a fork was created from.
+			var resolver *pinpoint.GitHubResolver
 			if opts.Updates {
-				updates, err = checkUpdates(cmd, report)
+				resolver, err = newResolver(cmd)
+				if err != nil {
+					return err
+				}
+			}
+
+			var updates *pinpoint.Updates
+			if resolver != nil {
+				updates, err = checkUpdates(cmd, resolver, report)
 				if err != nil {
 					return err
 				}
 			}
 
 			if opts.Attest {
-				return writeAttestation(cmd.OutOrStdout(), report, updates, opts.Path)
+				return writeAttestation(cmd, report, updates, resolver, opts.Path)
 			}
 
 			return writeReport(cmd.OutOrStdout(), report, updates)
@@ -83,16 +99,21 @@ to raise the rate limit applied to the lookups.
 	parent.AddCommand(checkCmd)
 }
 
-// checkUpdates looks up the versions available for the references of a
-// report. Failing to reach the forge is not fatal, pinpoint still knows
-// which references are pinned, so the lookup errors are reported and the
-// command carries on without the version data.
-func checkUpdates(cmd *cobra.Command, report *pinpoint.Report) (*pinpoint.Updates, error) {
+// newResolver creates the client pinpoint asks about versions and forks.
+// Failing to create it is not fatal, the scan still knows which references
+// are pinned, so the error is reported and the command carries on.
+func newResolver(cmd *cobra.Command) (*pinpoint.GitHubResolver, error) {
 	resolver, err := pinpoint.NewGitHubResolver()
 	if err != nil {
 		return nil, warnNoUpdates(cmd, err)
 	}
+	return resolver, nil
+}
 
+// checkUpdates looks up the versions available for the references of a
+// report. Lookup errors leave the command without version data instead of
+// stopping it.
+func checkUpdates(cmd *cobra.Command, resolver pinpoint.Resolver, report *pinpoint.Report) (*pinpoint.Updates, error) {
 	updates, err := pinpoint.CheckUpdates(cmd.Context(), resolver, report.References)
 	if err != nil {
 		return nil, warnNoUpdates(cmd, err)
@@ -162,9 +183,24 @@ func writeReport(w io.Writer, report *pinpoint.Report, updates *pinpoint.Updates
 }
 
 // writeAttestation renders the scan results as an in-toto attestation
-// vouching for the repository found at path at its current commit.
-func writeAttestation(w io.Writer, report *pinpoint.Report, updates *pinpoint.Updates, path string) error {
-	subject, err := pinpoint.SubjectFromRepository(path)
+// vouching for the repository found at path at its current commit. When a
+// resolver is available the subject names the repository a fork was created
+// from instead of the fork itself.
+func writeAttestation(
+	cmd *cobra.Command, report *pinpoint.Report,
+	updates *pinpoint.Updates, resolver *pinpoint.GitHubResolver, path string,
+) error {
+	w := cmd.OutOrStdout()
+
+	// Only hand over a resolver we actually have: a nil pointer stored in
+	// an interface is not a nil interface, and the subject builder would
+	// take it for a usable one.
+	var source pinpoint.SourceResolver
+	if resolver != nil {
+		source = resolver
+	}
+
+	subject, err := pinpoint.SubjectFromRepository(cmd.Context(), path, source)
 	if err != nil {
 		return fmt.Errorf("defining attestation subject: %w", err)
 	}

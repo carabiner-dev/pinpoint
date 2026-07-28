@@ -20,7 +20,9 @@ type Check struct {
 	Attest bool
 
 	// Updates makes pinpoint look up the latest release of the actions to
-	// report the references that have a newer version available.
+	// report the references that have a newer version available. It also
+	// gates the lookup of the repository a fork was created from: it is
+	// the switch that lets pinpoint reach the forge.
 	Updates bool
 }
 
@@ -33,6 +35,6 @@ func (co *Check) AddFlags(cmd *cobra.Command) {
 	)
 	cmd.PersistentFlags().BoolVar(
 		&co.Updates, "updates", true,
-		"look up the latest release of the actions to report the outdated ones",
+		"query the forge for the latest releases and the source of forked repositories",
 	)
 }

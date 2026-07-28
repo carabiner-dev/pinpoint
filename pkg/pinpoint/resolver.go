@@ -46,6 +46,15 @@ type Resolver interface {
 	ResolveVersion(ctx context.Context, repository, version string) (*Release, error)
 }
 
+// SourceResolver maps a repository to the project it was forked from. It is
+// what lets an attestation name the repository the code comes from instead
+// of the fork it was scanned in.
+type SourceResolver interface {
+	// SourceRepository returns the owner/name of the repository a fork was
+	// created from, or the repository itself when it is not a fork.
+	SourceRepository(ctx context.Context, repository string) (string, error)
+}
+
 // apiCaller is the slice of the GitHub client the resolver needs. It keeps
 // the resolver testable without hitting the API.
 type apiCaller interface {
@@ -60,6 +69,7 @@ type GitHubResolver struct {
 	mtx      sync.Mutex
 	releases map[string]*Release
 	tags     map[string][]repositoryTag
+	sources  map[string]string
 }
 
 // repositoryTag is a tag as returned by the GitHub API.
@@ -88,7 +98,60 @@ func NewGitHubResolverWithClient(client apiCaller) *GitHubResolver {
 		client:   client,
 		releases: map[string]*Release{},
 		tags:     map[string][]repositoryTag{},
+		sources:  map[string]string{},
 	}
+}
+
+// SourceRepository returns the repository a fork was created from, the root
+// of the fork network when the fork was itself forked. Repositories that are
+// not forks resolve to themselves, with the name the forge has for them now:
+// a repository that was renamed resolves to its current owner/name.
+func (r *GitHubResolver) SourceRepository(ctx context.Context, repository string) (string, error) {
+	if repository == "" {
+		return "", errors.New("no repository specified")
+	}
+
+	r.mtx.Lock()
+	cached, ok := r.sources[repository]
+	r.mtx.Unlock()
+	if ok {
+		return cached, nil
+	}
+
+	var repo struct {
+		FullName string `json:"full_name"`
+		Fork     bool   `json:"fork"`
+		// Source is the root of the fork network, parent the repository
+		// this one was forked from directly.
+		Source *struct {
+			FullName string `json:"full_name"`
+		} `json:"source"`
+		Parent *struct {
+			FullName string `json:"full_name"`
+		} `json:"parent"`
+	}
+	if err := r.get(ctx, "repos/"+repository, &repo); err != nil {
+		return "", err
+	}
+
+	source := repo.FullName
+	if source == "" {
+		source = repository
+	}
+	if repo.Fork {
+		switch {
+		case repo.Source != nil && repo.Source.FullName != "":
+			source = repo.Source.FullName
+		case repo.Parent != nil && repo.Parent.FullName != "":
+			source = repo.Parent.FullName
+		}
+	}
+
+	r.mtx.Lock()
+	r.sources[repository] = source
+	r.mtx.Unlock()
+
+	return source, nil
 }
 
 // LatestRelease returns the newest release of a repository. Repositories that

@@ -4,7 +4,9 @@
 package pinpoint
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	gointoto "github.com/in-toto/attestation/go/v1"
@@ -39,6 +41,76 @@ func TestRemoteLocation(t *testing.T) {
 			}
 			if location != tc.expected {
 				t.Errorf("remoteLocation(%q) = %q, want %q", tc.remote, location, tc.expected)
+			}
+		})
+	}
+}
+
+// stubSourceResolver answers fork lookups from a fixed map.
+type stubSourceResolver struct {
+	sources map[string]string
+	err     error
+}
+
+func (s *stubSourceResolver) SourceRepository(_ context.Context, repository string) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	source, ok := s.sources[repository]
+	if !ok {
+		return repository, nil
+	}
+	return source, nil
+}
+
+func TestSourceLocation(t *testing.T) {
+	t.Parallel()
+	resolver := &stubSourceResolver{
+		sources: map[string]string{"puerco/kubernetes": "kubernetes/kubernetes"},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		resolver SourceResolver
+		location string
+		expected string
+	}{
+		{
+			name:     "fork resolves to its source",
+			resolver: resolver,
+			location: "github.com/puerco/kubernetes",
+			expected: "github.com/kubernetes/kubernetes",
+		},
+		{
+			name:     "repositories that are not forks are left alone",
+			resolver: resolver,
+			location: "github.com/carabiner-dev/pinpoint",
+			expected: "github.com/carabiner-dev/pinpoint",
+		},
+		{
+			name:     "without a resolver nothing is looked up",
+			resolver: nil,
+			location: "github.com/puerco/kubernetes",
+			expected: "github.com/puerco/kubernetes",
+		},
+		{
+			name:     "other forges are left alone",
+			resolver: resolver,
+			location: "gitlab.com/puerco/kubernetes",
+			expected: "gitlab.com/puerco/kubernetes",
+		},
+		{
+			name:     "a failed lookup keeps the repository we scanned",
+			resolver: &stubSourceResolver{err: errors.New("no network")},
+			location: "github.com/puerco/kubernetes",
+			expected: "github.com/puerco/kubernetes",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := sourceLocation(t.Context(), tc.resolver, tc.location)
+			if got != tc.expected {
+				t.Errorf("sourceLocation(%q) = %q, want %q", tc.location, got, tc.expected)
 			}
 		})
 	}

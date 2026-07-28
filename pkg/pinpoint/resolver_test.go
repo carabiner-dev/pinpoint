@@ -144,6 +144,78 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
+func TestSourceRepository(t *testing.T) {
+	t.Parallel()
+	caller := &stubCaller{
+		responses: map[string]string{
+			// A fork of a fork resolves to the root of the network.
+			"repos/puerco/kubernetes": `{
+				"full_name": "puerco/kubernetes", "fork": true,
+				"parent": {"full_name": "someone/kubernetes"},
+				"source": {"full_name": "kubernetes/kubernetes"}
+			}`,
+			// Older forks only carry a parent.
+			"repos/puerco/orphan": `{
+				"full_name": "puerco/orphan", "fork": true,
+				"parent": {"full_name": "upstream/orphan"}
+			}`,
+			// Repositories that are not forks resolve to themselves, with
+			// the name the forge has for them now.
+			"repos/carabiner-dev/pinpoint": `{"full_name": "carabiner-dev/pinpoint", "fork": false}`,
+			"repos/carabiner-dev/old-name": `{"full_name": "carabiner-dev/new-name", "fork": false}`,
+		},
+	}
+	resolver := NewGitHubResolverWithClient(caller)
+
+	for _, tc := range []struct {
+		repository string
+		expected   string
+	}{
+		{"puerco/kubernetes", "kubernetes/kubernetes"},
+		{"puerco/orphan", "upstream/orphan"},
+		{"carabiner-dev/pinpoint", "carabiner-dev/pinpoint"},
+		{"carabiner-dev/old-name", "carabiner-dev/new-name"},
+	} {
+		t.Run(tc.repository, func(t *testing.T) {
+			t.Parallel()
+			source, err := resolver.SourceRepository(t.Context(), tc.repository)
+			if err != nil {
+				t.Fatalf("resolving source: %v", err)
+			}
+			if source != tc.expected {
+				t.Errorf("SourceRepository(%q) = %q, want %q", tc.repository, source, tc.expected)
+			}
+		})
+	}
+
+	t.Run("cached", func(t *testing.T) {
+		if _, err := resolver.SourceRepository(t.Context(), "puerco/kubernetes"); err != nil {
+			t.Fatalf("warming the cache: %v", err)
+		}
+		calls := len(caller.calls)
+		if _, err := resolver.SourceRepository(t.Context(), "puerco/kubernetes"); err != nil {
+			t.Fatalf("resolving cached source: %v", err)
+		}
+		if len(caller.calls) != calls {
+			t.Errorf("cached lookup called the API: %+v", caller.calls[calls:])
+		}
+	})
+
+	t.Run("unknown repository", func(t *testing.T) {
+		t.Parallel()
+		if _, err := resolver.SourceRepository(t.Context(), "nope/nope"); err == nil {
+			t.Error("expected an error resolving an unknown repository")
+		}
+	})
+
+	t.Run("no repository", func(t *testing.T) {
+		t.Parallel()
+		if _, err := resolver.SourceRepository(t.Context(), ""); err == nil {
+			t.Error("expected an error resolving an empty repository")
+		}
+	})
+}
+
 func TestMoreSpecific(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
