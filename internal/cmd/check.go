@@ -6,7 +6,9 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/carabiner-dev/termtable"
 	"github.com/spf13/cobra"
@@ -247,44 +249,110 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 	return nil
 }
 
+// maxLinesWidth caps the width of the column listing the lines of a bump so
+// that a long list wraps instead of squeezing the rest of the table.
+const maxLinesWidth = 14
+
+// bump is an action upgrade available to a workflow: every entry of a file
+// using the same version of the same action is reported as one.
+type bump struct {
+	// Workflow is the path of the file holding the entries.
+	Workflow string
+
+	// Action is the repository hosting the action.
+	Action string
+
+	// Using is the version the entries are pinned to.
+	Using string
+
+	// Latest is the newest release of the action.
+	Latest string
+
+	// Lines are the lines of the file defining the entries.
+	Lines []int
+}
+
+// bumps groups the outdated references by the file they live in and the
+// version they are using, so that a workflow using the same old action three
+// times is one bump to apply, not three findings.
+func bumps(refs []pinpoint.Reference, updates *pinpoint.Updates) []bump {
+	var grouped []bump
+	index := map[string]int{}
+
+	for _, ref := range refs {
+		using := pinnedVersion(&ref)
+		key := strings.Join([]string{ref.Workflow, ref.Repository(), using}, "\x00")
+
+		if at, ok := index[key]; ok {
+			grouped[at].Lines = append(grouped[at].Lines, ref.Line)
+			continue
+		}
+
+		index[key] = len(grouped)
+		grouped = append(grouped, bump{
+			Workflow: ref.Workflow,
+			Action:   ref.Repository(),
+			Using:    using,
+			Latest:   latestVersion(&ref, updates),
+			Lines:    []int{ref.Line},
+		})
+	}
+
+	for i := range grouped {
+		sort.Ints(grouped[i].Lines)
+	}
+	return grouped
+}
+
+// lineList renders the lines of a bump as a comma separated list.
+func (b *bump) lineList() string {
+	numbers := make([]string, 0, len(b.Lines))
+	for _, line := range b.Lines {
+		numbers = append(numbers, strconv.Itoa(line))
+	}
+	return strings.Join(numbers, ", ")
+}
+
 // writeOutdatedTable renders the references that are pinned to a version
-// older than the latest release of the action.
+// older than the latest release of the action, one row per action version
+// in each workflow.
 func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Updates) error {
 	t := termtable.NewTable()
 
 	head := t.AddHeader()
 	head.AddCell(termtable.WithContent("Workflow"))
-	head.AddCell(termtable.WithContent("Line"))
+	head.AddCell(termtable.WithContent("Lines"))
 	head.AddCell(termtable.WithContent("Action"))
 	head.AddCell(termtable.WithContent("Using"))
 	head.AddCell(termtable.WithContent("Latest"))
 
 	styleFileColumn(t, 0)
+	// The lines are the one column allowed to wrap: a long list is better
+	// read on two lines than trimmed away.
 	t.Column(1).SetAlign(termtable.AlignRight)
 	t.Column(2).Style("white-space: nowrap; flex: 3")
 	t.Column(3).Style("white-space: nowrap")
 	t.Column(4).Style("white-space: nowrap")
 
-	lines := make([]string, 0, len(refs))
-	usings := make([]string, 0, len(refs))
-	latests := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		line := strconv.Itoa(ref.Line)
-		using := pinnedVersion(&ref)
-		latest := latestVersion(&ref, updates)
-		lines = append(lines, line)
-		usings = append(usings, using)
-		latests = append(latests, latest)
+	grouped := bumps(refs, updates)
+	lines := make([]string, 0, len(grouped))
+	usings := make([]string, 0, len(grouped))
+	latests := make([]string, 0, len(grouped))
+	for i := range grouped {
+		b := &grouped[i]
+		lines = append(lines, b.lineList())
+		usings = append(usings, b.Using)
+		latests = append(latests, b.Latest)
 
 		row := t.AddRow()
-		row.AddCell(termtable.WithContent(ref.Workflow))
-		row.AddCell(termtable.WithContent(line))
-		row.AddCell(termtable.WithContent(ref.Repository()))
-		row.AddCell(termtable.WithContent(using))
-		row.AddCell(termtable.WithContent(latest))
+		row.AddCell(termtable.WithContent(b.Workflow))
+		row.AddCell(termtable.WithContent(b.lineList()))
+		row.AddCell(termtable.WithContent(b.Action))
+		row.AddCell(termtable.WithContent(b.Using))
+		row.AddCell(termtable.WithContent(b.Latest))
 	}
 
-	t.Column(1).SetWidth(narrowWidth("Line", lines...))
+	t.Column(1).SetWidth(min(narrowWidth("Lines", lines...), maxLinesWidth))
 	t.Column(3).SetWidth(narrowWidth("Using", usings...))
 	t.Column(4).SetWidth(narrowWidth("Latest", latests...))
 
