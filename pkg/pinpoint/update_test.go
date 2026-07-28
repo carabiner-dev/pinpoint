@@ -12,16 +12,26 @@ import (
 	"testing"
 )
 
-// stubResolver answers from a fixed map, recording the repositories it was
-// asked about.
+// stubResolver answers from fixed maps, recording the lookups it was asked
+// for. Versions are keyed as repository@version.
 type stubResolver struct {
 	releases map[string]Release
+	versions map[string]Release
 	calls    []string
 }
 
 func (s *stubResolver) LatestRelease(_ context.Context, repository string) (*Release, error) {
 	s.calls = append(s.calls, repository)
 	release, ok := s.releases[repository]
+	if !ok {
+		return nil, ErrNoReleases
+	}
+	return &release, nil
+}
+
+func (s *stubResolver) ResolveVersion(_ context.Context, repository, version string) (*Release, error) {
+	s.calls = append(s.calls, repository+"@"+version)
+	release, ok := s.versions[repository+"@"+version]
 	if !ok {
 		return nil, ErrNoReleases
 	}
@@ -36,6 +46,7 @@ func TestRewriteUses(t *testing.T) {
 		name     string
 		line     string
 		uses     string
+		tag      string
 		expected string
 		mustErr  bool
 	}{
@@ -76,6 +87,13 @@ func TestRewriteUses(t *testing.T) {
 			expected: "    uses: example/workflows/.github/workflows/release.yml@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0",
 		},
 		{
+			name:     "version we cannot name gets no comment",
+			line:     "        uses: actions/checkout@main",
+			uses:     "actions/checkout@main",
+			tag:      "-",
+			expected: "        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8",
+		},
+		{
 			name:    "line is not a uses entry",
 			line:    "        run: go test ./...",
 			uses:    "actions/checkout@v4",
@@ -93,6 +111,10 @@ func TestRewriteUses(t *testing.T) {
 			update := Update{
 				Reference: Reference{Uses: tc.uses, Kind: KindAction},
 				Release:   release,
+			}
+			// A "-" tag stands for a version we could not name.
+			if tc.tag == "-" {
+				update.Release.Tag = ""
 			}
 
 			got, err := rewriteUses(tc.line, &update)
@@ -112,19 +134,29 @@ func TestRewriteUses(t *testing.T) {
 	}
 }
 
-func TestPlan(t *testing.T) {
-	t.Parallel()
-	resolver := &stubResolver{
+// planResolver returns a resolver answering for the references used by the
+// planning tests.
+func planResolver() *stubResolver {
+	return &stubResolver{
 		releases: map[string]Release{
 			"actions/checkout": {Tag: "v5.0.0", Commit: "08c6903cd8c0fde910a37f88322edcfb5dd907a8"},
 			"actions/setup-go": {Tag: "v6.0.0", Commit: "11bd71901bbe5b1630ceea73d27597364c9af683"},
 		},
+		versions: map[string]Release{
+			// The v4 entry resolves to the patch release naming its commit.
+			"actions/checkout@v4": {Tag: "v4.2.2", Commit: "ea165f8d65b6e75b540449e92b4886f43607fa02"},
+		},
 	}
-	updater := &Updater{Resolver: resolver}
+}
+
+func TestPlanUpgrade(t *testing.T) {
+	t.Parallel()
+	resolver := planResolver()
+	updater := &Updater{Resolver: resolver, Upgrade: true}
 
 	refs := []Reference{
 		{Uses: "actions/checkout@v4", Kind: KindAction},
-		// Already at the release commit, nothing to do.
+		// Already at the latest release commit, nothing to do.
 		{Uses: "actions/setup-go@11bd71901bbe5b1630ceea73d27597364c9af683", Kind: KindAction},
 		{Uses: "./.github/actions/local", Kind: KindLocal},
 		{Uses: "docker://alpine:3.22", Kind: KindContainer},
@@ -156,8 +188,43 @@ func TestPlan(t *testing.T) {
 		t.Errorf("unresolved skip lost its error: %v", plan.Skipped[3].Err)
 	}
 
-	// Local and container references must not reach the resolver.
+	// Local and container references must not reach the resolver, and an
+	// upgrade only asks for the latest release of each repository.
 	expectedCalls := []string{"actions/checkout", "actions/setup-go", "unknown/action"}
+	if strings.Join(resolver.calls, ",") != strings.Join(expectedCalls, ",") {
+		t.Errorf("resolver called with %+v, want %+v", resolver.calls, expectedCalls)
+	}
+}
+
+func TestPlanPinsCurrentVersion(t *testing.T) {
+	t.Parallel()
+	resolver := planResolver()
+	updater := &Updater{Resolver: resolver}
+
+	refs := []Reference{
+		{Uses: "actions/checkout@v4", Kind: KindAction},
+		// Pinned entries are left alone unless we are upgrading.
+		{Uses: "actions/setup-go@1234567890123456789012345678901234567890", Kind: KindAction},
+	}
+
+	plan, err := updater.Plan(t.Context(), refs)
+	if err != nil {
+		t.Fatalf("planning updates: %v", err)
+	}
+
+	if len(plan.Updates) != 1 {
+		t.Fatalf("expected 1 update, got %+v", plan.Updates)
+	}
+	// The reference keeps the version it was using, pinned to its commit.
+	if got := plan.Updates[0].String(); got != "actions/checkout@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.2.2" {
+		t.Errorf("unexpected update value: %q", got)
+	}
+
+	if len(plan.Skipped) != 1 || plan.Skipped[0].Reason != SkipPinned {
+		t.Errorf("unexpected skips: %+v", plan.Skipped)
+	}
+
+	expectedCalls := []string{"actions/checkout@v4"}
 	if strings.Join(resolver.calls, ",") != strings.Join(expectedCalls, ",") {
 		t.Errorf("resolver called with %+v, want %+v", resolver.calls, expectedCalls)
 	}

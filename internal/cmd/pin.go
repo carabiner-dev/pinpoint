@@ -24,21 +24,27 @@ func addPin(parent *cobra.Command) {
 		Long: appName + ` pin: pin action references to a commit hash
 
 The pin subcommand scans the GitHub Actions workflows found in a
-directory (the current one by default), looks up the latest release of
-every action that is not pinned to a commit hash and rewrites the
-workflows in place to point at the commit of that release. The tag the
-commit was released as is left in a comment next to the reference:
+directory (the current one by default) and rewrites in place the action
+references that are not pinned to a commit hash. Each entry is pinned to
+the commit the version it uses points at, leaving the version in a
+comment next to the reference:
 
   uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-Any comment already trailing the entry is replaced with the version, it
-is the slot where the tag a hash corresponds to is kept by convention.
+The comment records the most precise tag naming the commit, so an entry
+tracking a major version (@v5) is pinned with the patch release it
+resolved to. Any comment already trailing the entry is replaced, it is
+the slot where the version a hash corresponds to is kept by convention.
+
+Using --upgrade, references are pinned to the latest release of each
+action instead of to the version they are using, upgrading them in the
+same pass.
 
 Using --all, pinpoint looks at every reference instead of only the
-unpinned ones, updating those that have a newer release. The scan is
-also widened to the action definitions (action.yml files) found in the
-repository, skipping the .git, vendor, node_modules and testdata
-directories.
+unpinned ones. Combined with --upgrade this moves the whole repository
+to the newest releases. The scan is also widened to the action
+definitions (action.yml files) found in the repository, skipping the
+.git, vendor, node_modules and testdata directories.
 
 References that cannot be pinned to a repository commit (local actions
 and those run from container images) are left untouched.
@@ -72,7 +78,9 @@ to raise the rate limit applied to the lookups.
 				return err
 			}
 
-			updater, err := pinpoint.NewUpdater()
+			updater, err := pinpoint.NewUpdater(
+				pinpoint.WithUpgrade(opts.Upgrade),
+			)
 			if err != nil {
 				return err
 			}
@@ -127,7 +135,7 @@ func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error 
 			); err != nil {
 				return fmt.Errorf("writing summary: %w", err)
 			}
-		case pinpoint.SkipUpToDate:
+		case pinpoint.SkipPinned, pinpoint.SkipUpToDate:
 		}
 	}
 

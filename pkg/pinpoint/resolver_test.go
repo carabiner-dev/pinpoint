@@ -86,6 +86,87 @@ func TestLatestRelease(t *testing.T) {
 	}
 }
 
+func TestResolveVersion(t *testing.T) {
+	t.Parallel()
+	tags := `[
+		{"name": "v4.2.2", "commit": {"sha": "ea165f8d65b6e75b540449e92b4886f43607fa02"}},
+		{"name": "v4", "commit": {"sha": "ea165f8d65b6e75b540449e92b4886f43607fa02"}},
+		{"name": "v4.2.1", "commit": {"sha": "1111111111111111111111111111111111111111"}}
+	]`
+	caller := &stubCaller{
+		responses: map[string]string{
+			"repos/actions/checkout/commits/v4":        `{"sha": "ea165f8d65b6e75b540449e92b4886f43607fa02"}`,
+			"repos/actions/checkout/commits/main":      `{"sha": "2222222222222222222222222222222222222222"}`,
+			"repos/actions/checkout/commits/HEAD":      `{"sha": "2222222222222222222222222222222222222222"}`,
+			"repos/actions/checkout/tags?per_page=100": tags,
+		},
+	}
+	resolver := NewGitHubResolverWithClient(caller)
+
+	// A major version tag is recorded as the patch release naming its commit.
+	release, err := resolver.ResolveVersion(t.Context(), "actions/checkout", "v4")
+	if err != nil {
+		t.Fatalf("resolving version: %v", err)
+	}
+	if release.Tag != "v4.2.2" || release.Commit != "ea165f8d65b6e75b540449e92b4886f43607fa02" {
+		t.Errorf("unexpected release: %+v", release)
+	}
+
+	// A second lookup of the same version is served from the cache.
+	calls := len(caller.calls)
+	if _, err := resolver.ResolveVersion(t.Context(), "actions/checkout", "v4"); err != nil {
+		t.Fatalf("resolving cached version: %v", err)
+	}
+	if len(caller.calls) != calls {
+		t.Errorf("cached lookup called the API: %+v", caller.calls[calls:])
+	}
+
+	// Branches keep their name, no tag points at their commit.
+	release, err = resolver.ResolveVersion(t.Context(), "actions/checkout", "main")
+	if err != nil {
+		t.Fatalf("resolving branch: %v", err)
+	}
+	if release.Tag != "main" || release.Commit != "2222222222222222222222222222222222222222" {
+		t.Errorf("unexpected release: %+v", release)
+	}
+
+	// References with no version track the default branch.
+	release, err = resolver.ResolveVersion(t.Context(), "actions/checkout", "")
+	if err != nil {
+		t.Fatalf("resolving default branch: %v", err)
+	}
+	if release.Tag != "" || release.Commit != "2222222222222222222222222222222222222222" {
+		t.Errorf("unexpected release: %+v", release)
+	}
+
+	if _, err := resolver.ResolveVersion(t.Context(), "actions/checkout", "nope"); err == nil {
+		t.Error("expected an error resolving an unknown version")
+	}
+}
+
+func TestMoreSpecific(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		candidate string
+		current   string
+		expected  bool
+	}{
+		{"v4.2.2", "v4", true},
+		{"v4", "v4.2.2", false},
+		{"v4.2.2", "v4.2.1", true},
+		{"v4.2.1", "v4.2.2", false},
+		{"v4.2.2", "latest", true},
+		{"latest", "v4.2.2", false},
+	} {
+		t.Run(tc.candidate+" over "+tc.current, func(t *testing.T) {
+			t.Parallel()
+			if got := moreSpecific(tc.candidate, tc.current); got != tc.expected {
+				t.Errorf("moreSpecific(%q, %q) = %v, want %v", tc.candidate, tc.current, got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestHighestSemver(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

@@ -31,7 +31,16 @@ type Update struct {
 // included.
 func (u *Update) String() string {
 	path, _, _ := strings.Cut(u.Reference.Uses, "@")
-	return fmt.Sprintf("%s@%s # %s", path, u.Release.Commit, u.Release.Tag)
+	return path + "@" + u.Release.Commit + versionComment(u.Release.Tag)
+}
+
+// versionComment returns the comment recording the version a reference was
+// pinned from. Versions we could not name get no comment at all.
+func versionComment(tag string) string {
+	if tag == "" {
+		return ""
+	}
+	return " # " + tag
 }
 
 // SkipReason explains why a reference cannot be updated.
@@ -46,6 +55,9 @@ const (
 
 	// SkipNoRepository is a reference we cannot map to a repository.
 	SkipNoRepository SkipReason = "unable to determine the source repository"
+
+	// SkipPinned is a reference already pinned to a commit hash.
+	SkipPinned SkipReason = "already pinned to a commit hash"
 
 	// SkipUpToDate is a reference already pinned to the latest release.
 	SkipUpToDate SkipReason = "already pinned to the latest release"
@@ -78,25 +90,48 @@ type Plan struct {
 	Skipped []Skip
 }
 
-// Updater computes and applies the updates that pin action references to
-// their latest released version.
+// Updater computes and applies the updates that pin action references to a
+// commit hash.
 type Updater struct {
-	// Resolver looks up the released versions of the actions.
+	// Resolver looks up the versions of the actions.
 	Resolver Resolver
+
+	// Upgrade makes the updater move the references to the latest release
+	// of each action. When false, references are pinned to the commit their
+	// current version points at.
+	Upgrade bool
+}
+
+// UpdaterOption configures an updater.
+type UpdaterOption func(*Updater)
+
+// WithUpgrade makes the updater pin references to the latest release of the
+// action instead of to the version they already track.
+func WithUpgrade(upgrade bool) UpdaterOption {
+	return func(u *Updater) {
+		u.Upgrade = upgrade
+	}
 }
 
 // NewUpdater creates an updater that resolves versions using the GitHub API.
-func NewUpdater() (*Updater, error) {
+func NewUpdater(opts ...UpdaterOption) (*Updater, error) {
 	resolver, err := NewGitHubResolver()
 	if err != nil {
 		return nil, err
 	}
-	return &Updater{Resolver: resolver}, nil
+
+	updater := &Updater{Resolver: resolver}
+	for _, opt := range opts {
+		opt(updater)
+	}
+	return updater, nil
 }
 
-// Plan computes the changes needed to pin a list of references to the latest
-// release of each action. References that are already pinned to the newest
-// release, and those that cannot be pinned at all, are returned as skips.
+// Plan computes the changes needed to pin a list of references to a commit
+// hash: the commit of the version each reference tracks or, for updaters set
+// to upgrade, the commit of the latest release of the action. References that
+// need no change, and those that cannot be pinned at all, are returned as
+// skips.
 func (u *Updater) Plan(ctx context.Context, refs []Reference) (*Plan, error) {
 	if u.Resolver == nil {
 		return nil, errors.New("updater has no resolver configured")
@@ -120,7 +155,14 @@ func (u *Updater) Plan(ctx context.Context, refs []Reference) (*Plan, error) {
 			continue
 		}
 
-		release, err := u.Resolver.LatestRelease(ctx, repository)
+		// Without an upgrade there is nothing to do to a reference that
+		// already points at a commit.
+		if !u.Upgrade && ref.IsPinned() {
+			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipPinned})
+			continue
+		}
+
+		release, err := u.resolve(ctx, &ref, repository)
 		if err != nil {
 			plan.Skipped = append(plan.Skipped, Skip{
 				Reference: ref, Reason: SkipUnresolved, Err: err,
@@ -137,6 +179,14 @@ func (u *Updater) Plan(ctx context.Context, refs []Reference) (*Plan, error) {
 	}
 
 	return plan, nil
+}
+
+// resolve returns the version a reference is to be pinned to.
+func (u *Updater) resolve(ctx context.Context, ref *Reference, repository string) (*Release, error) {
+	if u.Upgrade {
+		return u.Resolver.LatestRelease(ctx, repository)
+	}
+	return u.Resolver.ResolveVersion(ctx, repository, ref.Version())
 }
 
 // Apply writes the updates to the files under root and returns the paths of
@@ -267,6 +317,7 @@ func rewriteUses(line string, update *Update) (string, error) {
 
 	path, _, _ := strings.Cut(value, "@")
 	return fmt.Sprintf(
-		"%s%s%s@%s%s # %s", key, quote, path, update.Release.Commit, quote, update.Release.Tag,
+		"%s%s%s@%s%s%s",
+		key, quote, path, update.Release.Commit, quote, versionComment(update.Release.Tag),
 	), nil
 }
