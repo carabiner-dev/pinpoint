@@ -18,9 +18,10 @@ import (
 )
 
 // Statement wraps the report predicate in an in-toto statement attesting to
-// the received subjects.
-func (r *Report) Statement(subjects ...*gointoto.ResourceDescriptor) (*gointoto.Statement, error) {
-	data, err := json.Marshal(r.Predicate())
+// the received subjects. The updates are the versions available for the
+// references, nil when they were not looked up.
+func (r *Report) Statement(updates *Updates, subjects ...*gointoto.ResourceDescriptor) (*gointoto.Statement, error) {
+	data, err := json.Marshal(r.Predicate(updates))
 	if err != nil {
 		return nil, fmt.Errorf("marshaling predicate: %w", err)
 	}

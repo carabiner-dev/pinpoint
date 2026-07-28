@@ -18,6 +18,10 @@ type Check struct {
 	// Attest makes pinpoint write the scan results as an in-toto
 	// attestation instead of the human readable output.
 	Attest bool
+
+	// Updates makes pinpoint look up the latest release of the actions to
+	// report the references that have a newer version available.
+	Updates bool
 }
 
 // AddFlags adds the check flags to a command.
@@ -26,5 +30,9 @@ func (co *Check) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVarP(
 		&co.Attest, "attest", "a", false,
 		"write the results as an (unsigned) in-toto attestation",
+	)
+	cmd.PersistentFlags().BoolVar(
+		&co.Updates, "updates", true,
+		"look up the latest release of the actions to report the outdated ones",
 	)
 }

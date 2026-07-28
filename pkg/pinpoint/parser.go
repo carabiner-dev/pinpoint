@@ -5,6 +5,7 @@ package pinpoint
 
 import (
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -43,10 +44,11 @@ func parseWorkflow(data []byte) ([]Reference, error) {
 				kind = KindLocal
 			}
 			refs = append(refs, Reference{
-				Job:  jobID,
-				Uses: uses.Value,
-				Kind: kind,
-				Line: uses.Line,
+				Job:     jobID,
+				Uses:    uses.Value,
+				Comment: lineComment(uses),
+				Kind:    kind,
+				Line:    uses.Line,
 			})
 		}
 
@@ -98,14 +100,21 @@ func parseSteps(steps *yaml.Node, jobID string) []Reference {
 			name = scalarValue(step, "id")
 		}
 		refs = append(refs, Reference{
-			Job:  jobID,
-			Step: name,
-			Uses: uses.Value,
-			Kind: classify(uses.Value),
-			Line: uses.Line,
+			Job:     jobID,
+			Step:    name,
+			Uses:    uses.Value,
+			Comment: lineComment(uses),
+			Kind:    classify(uses.Value),
+			Line:    uses.Line,
 		})
 	}
 	return refs
+}
+
+// lineComment returns the comment trailing a node, stripped of its hash
+// sign and surrounding spaces.
+func lineComment(node *yaml.Node) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(node.LineComment), "#"))
 }
 
 // mapValue returns the value of key in a YAML mapping node, nil if the key

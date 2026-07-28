@@ -17,7 +17,7 @@ func TestPredicate(t *testing.T) {
 		t.Fatalf("scanning test repo: %v", err)
 	}
 
-	predicate := report.Predicate()
+	predicate := report.Predicate(nil)
 
 	expectedSummary := PredicateSummary{Workflows: 1, References: 6, Pinned: 3, Unpinned: 3}
 	if predicate.Summary != expectedSummary {
@@ -50,6 +50,69 @@ func TestPredicate(t *testing.T) {
 	}
 }
 
+func TestPredicateUpdates(t *testing.T) {
+	t.Parallel()
+	report := &Report{
+		Workflows: []string{".github/workflows/ci.yaml"},
+		References: []Reference{
+			{Uses: "actions/checkout@v4", Kind: KindAction},
+			{Uses: "actions/setup-go@11bd71901bbe5b1630ceea73d27597364c9af683", Kind: KindAction},
+			{Uses: "docker://alpine:3.22", Kind: KindContainer},
+		},
+	}
+
+	// Without a lookup the predicate says so and reports nothing outdated.
+	predicate := report.Predicate(nil)
+	if predicate.UpdatesChecked {
+		t.Error("predicate claims the versions were checked")
+	}
+	if predicate.Summary.Outdated != 0 {
+		t.Errorf("outdated = %d, want 0", predicate.Summary.Outdated)
+	}
+
+	updates := NewUpdates(&Plan{
+		Updates: []Update{
+			{
+				Reference: Reference{Uses: "actions/checkout@v4", Kind: KindAction},
+				Release:   Release{Tag: "v5.0.0", Commit: "08c6903cd8c0fde910a37f88322edcfb5dd907a8"},
+			},
+		},
+		Skipped: []Skip{
+			{
+				Reference: Reference{Uses: "actions/setup-go@11bd71901bbe5b1630ceea73d27597364c9af683"},
+				Reason:    SkipUpToDate,
+				Release:   &Release{Tag: "v6.0.0", Commit: "11bd71901bbe5b1630ceea73d27597364c9af683"},
+			},
+			{Reference: Reference{Uses: "docker://alpine:3.22"}, Reason: SkipContainer},
+		},
+	})
+
+	predicate = report.Predicate(updates)
+	if !predicate.UpdatesChecked {
+		t.Error("predicate does not report the versions as checked")
+	}
+	if predicate.Summary.Outdated != 1 {
+		t.Errorf("outdated = %d, want 1", predicate.Summary.Outdated)
+	}
+
+	expected := []PredicateReference{
+		{Uses: "actions/checkout@v4", LatestVersion: "v5.0.0", LatestCommit: "08c6903cd8c0fde910a37f88322edcfb5dd907a8", Outdated: true},
+		{Uses: "actions/setup-go@11bd71901bbe5b1630ceea73d27597364c9af683", LatestVersion: "v6.0.0", LatestCommit: "11bd71901bbe5b1630ceea73d27597364c9af683", Outdated: false},
+		// Container references have no version to compare against.
+		{Uses: "docker://alpine:3.22", LatestVersion: "", LatestCommit: "", Outdated: false},
+	}
+	for i, want := range expected {
+		got := predicate.References[i]
+		if got.LatestVersion != want.LatestVersion || got.LatestCommit != want.LatestCommit || got.Outdated != want.Outdated {
+			t.Errorf(
+				"reference %d: latest=%q/%q outdated=%v, want latest=%q/%q outdated=%v",
+				i, got.LatestVersion, got.LatestCommit, got.Outdated,
+				want.LatestVersion, want.LatestCommit, want.Outdated,
+			)
+		}
+	}
+}
+
 // TestPredicateFieldsAlwaysRendered guards the contract policies rely on:
 // every field of a reference is written to the JSON, even when empty, so
 // that policy code never needs to guard expressions with has().
@@ -60,7 +123,7 @@ func TestPredicateFieldsAlwaysRendered(t *testing.T) {
 		References: []Reference{{Workflow: ".github/workflows/ci.yaml", Job: "build", Uses: "./local", Kind: KindLocal, Line: 3}},
 	}
 
-	data, err := json.Marshal(report.Predicate())
+	data, err := json.Marshal(report.Predicate(nil))
 	if err != nil {
 		t.Fatalf("marshaling predicate: %v", err)
 	}
@@ -77,7 +140,8 @@ func TestPredicateFieldsAlwaysRendered(t *testing.T) {
 
 	for _, field := range []string{
 		"workflow", "line", "job", "step", "uses", "kind", "owner",
-		"repository", "version", "pinned",
+		"repository", "version", "pinned", "latest_version", "latest_commit",
+		"outdated",
 	} {
 		if _, ok := decoded.References[0][field]; !ok {
 			t.Errorf("reference field %q missing from the predicate JSON", field)
@@ -89,7 +153,7 @@ func TestPredicateFieldsAlwaysRendered(t *testing.T) {
 // renders the lists as empty arrays instead of nulls.
 func TestEmptyReportPredicate(t *testing.T) {
 	t.Parallel()
-	data, err := json.Marshal((&Report{}).Predicate())
+	data, err := json.Marshal((&Report{}).Predicate(nil))
 	if err != nil {
 		t.Fatalf("marshaling predicate: %v", err)
 	}

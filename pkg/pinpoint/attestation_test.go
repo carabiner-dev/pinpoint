@@ -59,7 +59,7 @@ func TestStatement(t *testing.T) {
 		Digest: map[string]string{"gitCommit": "ac881f9fa84fc51a8ead1609db049071b4a99bfa"},
 	}
 
-	statement, err := report.Statement(subject)
+	statement, err := report.Statement(nil, subject)
 	if err != nil {
 		t.Fatalf("building statement: %v", err)
 	}

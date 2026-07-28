@@ -74,6 +74,10 @@ type Skip struct {
 	// Reason explains why the reference was skipped.
 	Reason SkipReason
 
+	// Release is the version the reference was resolved to, set for the
+	// entries skipped because they already point at it.
+	Release *Release
+
 	// Err carries the underlying error for references skipped because the
 	// resolver could not answer for them.
 	Err error
@@ -171,7 +175,9 @@ func (u *Updater) Plan(ctx context.Context, refs []Reference) (*Plan, error) {
 		}
 
 		if ref.Version() == release.Commit {
-			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipUpToDate})
+			plan.Skipped = append(plan.Skipped, Skip{
+				Reference: ref, Reason: SkipUpToDate, Release: release,
+			})
 			continue
 		}
 
@@ -197,12 +203,12 @@ func (u *Updater) Apply(root string, updates []Update) ([]string, error) {
 	// and written only once.
 	byFile := map[string][]Update{}
 	var order []string
-	for _, update := range updates {
-		path := update.Reference.Workflow
+	for i := range updates {
+		path := updates[i].Reference.Workflow
 		if _, ok := byFile[path]; !ok {
 			order = append(order, path)
 		}
-		byFile[path] = append(byFile[path], update)
+		byFile[path] = append(byFile[path], updates[i])
 	}
 
 	var modified []string
@@ -257,7 +263,8 @@ func applyToFile(path string, updates []Update) (bool, error) {
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 
 	changed := false
-	for _, update := range updates {
+	for u := range updates {
+		update := &updates[u]
 		i := update.Reference.Line - 1
 		if i < 0 || i >= len(lines) {
 			return false, fmt.Errorf(
@@ -265,7 +272,7 @@ func applyToFile(path string, updates []Update) (bool, error) {
 			)
 		}
 
-		rewritten, err := rewriteUses(lines[i], &update)
+		rewritten, err := rewriteUses(lines[i], update)
 		if err != nil {
 			return false, fmt.Errorf("line %d: %w", update.Reference.Line, err)
 		}

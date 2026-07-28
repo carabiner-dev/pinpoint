@@ -124,7 +124,8 @@ func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error 
 	// Only the references we could not look up are worth calling out one by
 	// one, those we know we cannot pin are just counted.
 	unpinnable := 0
-	for _, skip := range plan.Skipped {
+	for i := range plan.Skipped {
+		skip := &plan.Skipped[i]
 		switch skip.Reason {
 		case pinpoint.SkipLocal, pinpoint.SkipContainer:
 			unpinnable++
@@ -168,7 +169,8 @@ func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
 
 	lines := make([]string, 0, len(updates))
 	versions := make([]string, 0, len(updates))
-	for _, update := range updates {
+	for i := range updates {
+		update := &updates[i]
 		line := strconv.Itoa(update.Reference.Line)
 		lines = append(lines, line)
 		versions = append(versions, update.Release.Tag)

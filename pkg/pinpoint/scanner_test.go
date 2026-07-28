@@ -19,7 +19,7 @@ func TestScan(t *testing.T) {
 	}
 
 	expected := []Reference{
-		{Workflow: wf, Job: "build", Step: "Checkout code", Uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8", Kind: KindAction, Line: 12},
+		{Workflow: wf, Job: "build", Step: "Checkout code", Uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8", Comment: "v5.0.0", Kind: KindAction, Line: 12},
 		{Workflow: wf, Job: "build", Step: "Setup go", Uses: "actions/setup-go@v6", Kind: KindAction, Line: 14},
 		{Workflow: wf, Job: "build", Uses: "./.github/actions/local-action", Kind: KindLocal, Line: 17},
 		{Workflow: wf, Job: "build", Step: "pinned-docker", Uses: "docker://alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d", Kind: KindContainer, Line: 19},

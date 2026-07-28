@@ -43,6 +43,11 @@ type Reference struct {
 	// Uses is the raw value of the `uses:` entry.
 	Uses string
 
+	// Comment is the comment trailing the entry, without the hash sign. It
+	// is where the version a pinned hash corresponds to is kept by
+	// convention.
+	Comment string
+
 	// Kind classifies what the reference points to.
 	Kind Kind
 
