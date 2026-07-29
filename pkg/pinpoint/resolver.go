@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -80,15 +81,43 @@ type repositoryTag struct {
 	} `json:"commit"`
 }
 
-// NewGitHubResolver creates a resolver that talks to the GitHub API. The
-// client reads its token from the GITHUB_TOKEN environment variable, calls
-// are made anonymously when it is not set.
+// tokenEnvVars are the environment variables pinpoint reads the API token
+// from, in order. The first is the one GitHub Actions exports, the second
+// the one the gh CLI uses.
+var tokenEnvVars = []string{"GITHUB_TOKEN", "GH_TOKEN"}
+
+// NewGitHubResolver creates a resolver that talks to the GitHub API through
+// the carabiner GitHub client. The token is read from the GITHUB_TOKEN or
+// GH_TOKEN environment variables; calls are made anonymously when neither is
+// set, which works for public repositories but gets rate limited quickly.
+// Callers that hold a token some other way can configure a client themselves
+// and hand it to NewGitHubResolverWithClient.
 func NewGitHubResolver() (*GitHubResolver, error) {
-	client, err := github.NewClient()
+	client, err := github.NewClientWithOptions(github.Options{
+		Host:        github.DefaultAPIHostname,
+		TokenReader: &EnvTokenReader{VarNames: tokenEnvVars},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("creating GitHub client: %w", err)
 	}
 	return NewGitHubResolverWithClient(client), nil
+}
+
+// EnvTokenReader reads the API token from the first environment variable of
+// a list that has one set.
+type EnvTokenReader struct {
+	VarNames []string
+}
+
+// ReadToken returns the token found in the environment. Finding none is an
+// error, the client only surfaces it when a token is required.
+func (r *EnvTokenReader) ReadToken() (string, error) {
+	for _, name := range r.VarNames {
+		if token := os.Getenv(name); token != "" {
+			return token, nil
+		}
+	}
+	return "", fmt.Errorf("no token set in %s", strings.Join(r.VarNames, ", "))
 }
 
 // NewGitHubResolverWithClient creates a resolver using a preconfigured API

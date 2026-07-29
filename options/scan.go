@@ -35,7 +35,9 @@ func (so *Scan) Config() *command.OptionsSetConfig {
 	return so.config
 }
 
-// AddFlags adds the scanner flags to a command.
+// AddFlags adds the scanner flags to a command. The API token is read from
+// the environment, never from a flag: tokens on a command line leak into the
+// shell history and the process list.
 func (so *Scan) AddFlags(_ *cobra.Command) {}
 
 // Validate checks that the scanner options are usable.

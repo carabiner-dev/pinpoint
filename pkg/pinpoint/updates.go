@@ -25,7 +25,8 @@ type UpdateStatus struct {
 // indexed by the value of their `uses:` entry: two entries using the same
 // action at the same version share a status.
 type Updates struct {
-	statuses map[string]UpdateStatus
+	statuses   map[string]UpdateStatus
+	unresolved []Skip
 }
 
 // CheckUpdates looks up the versions available for every reference received:
@@ -69,6 +70,10 @@ func NewUpdates(latest, pin *Plan) *Updates {
 
 		for i := range latest.Skipped {
 			skip := &latest.Skipped[i]
+			if skip.Reason == SkipUnresolved {
+				updates.unresolved = append(updates.unresolved, *skip)
+				continue
+			}
 			if skip.Release == nil {
 				continue
 			}
@@ -99,6 +104,16 @@ func (u *Updates) Status(ref *Reference) (UpdateStatus, bool) {
 	}
 	status, ok := u.statuses[ref.Uses]
 	return status, ok
+}
+
+// Unresolved returns the references pinpoint asked the forge about and got
+// no answer for, each with the error that stopped it. An expired token or a
+// rate limit shows up here.
+func (u *Updates) Unresolved() []Skip {
+	if u == nil {
+		return nil
+	}
+	return u.unresolved
 }
 
 // Outdated returns true when a reference is known not to point at the latest

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -52,8 +53,10 @@ names that one in the subject, noting the fork it read the workflows
 from in the subject annotations. With --updates=false the subject names
 the repository as the local origin remote has it.
 
-Versions are read from the GitHub API. Export a token in GITHUB_TOKEN
-to raise the rate limit applied to the lookups.
+Versions are read from the GitHub API through the carabiner GitHub
+client. Export a token in GITHUB_TOKEN or GH_TOKEN to authenticate the
+calls: anonymous calls work for public repositories but are rate limited
+to a handful of scans per hour.
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,7 +121,29 @@ func checkUpdates(cmd *cobra.Command, resolver pinpoint.Resolver, report *pinpoi
 	if err != nil {
 		return nil, warnNoUpdates(cmd, err)
 	}
+
+	// References that got no answer render as unknown versions. Say why
+	// once, a rejected token turns every row into a question mark.
+	if unresolved := updates.Unresolved(); len(unresolved) > 0 {
+		if _, err := fmt.Fprintf(
+			cmd.ErrOrStderr(), "Could not look up %d reference(s): %v\n",
+			len(unresolved), firstError(unresolved),
+		); err != nil {
+			return nil, fmt.Errorf("writing warning: %w", err)
+		}
+	}
+
 	return updates, nil
+}
+
+// firstError returns the error behind the first skip that carries one.
+func firstError(skipped []pinpoint.Skip) error {
+	for i := range skipped {
+		if skipped[i].Err != nil {
+			return skipped[i].Err
+		}
+	}
+	return errors.New("the version could not be resolved")
 }
 
 // warnNoUpdates tells the user why pinpoint is not reporting the versions

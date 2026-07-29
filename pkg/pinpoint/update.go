@@ -118,6 +118,7 @@ func WithUpgrade(upgrade bool) UpdaterOption {
 }
 
 // NewUpdater creates an updater that resolves versions using the GitHub API.
+// Callers with a resolver of their own build the Updater directly.
 func NewUpdater(opts ...UpdaterOption) (*Updater, error) {
 	resolver, err := NewGitHubResolver()
 	if err != nil {

@@ -49,8 +49,10 @@ definitions (action.yml files) found in the repository, skipping the
 References that cannot be pinned to a repository commit (local actions
 and those run from container images) are left untouched.
 
-Versions are read from the GitHub API. Export a token in GITHUB_TOKEN
-to raise the rate limit applied to the lookups.
+Versions are read from the GitHub API through the carabiner GitHub
+client. Export a token in GITHUB_TOKEN or GH_TOKEN to authenticate the
+calls: anonymous calls work for public repositories but are rate limited
+to a handful of scans per hour.
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -130,9 +132,13 @@ func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error 
 		case pinpoint.SkipLocal, pinpoint.SkipContainer:
 			unpinnable++
 		case pinpoint.SkipUnresolved, pinpoint.SkipNoRepository:
+			reason := string(skip.Reason)
+			if skip.Err != nil {
+				reason = fmt.Sprintf("%s (%v)", reason, skip.Err)
+			}
 			if _, err := fmt.Fprintf(
 				w, "Left %s in %s alone: %s\n",
-				skip.Reference.Uses, skip.Reference.Workflow, skip.Reason,
+				skip.Reference.Uses, skip.Reference.Workflow, reason,
 			); err != nil {
 				return fmt.Errorf("writing summary: %w", err)
 			}

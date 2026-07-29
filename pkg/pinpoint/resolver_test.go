@@ -144,6 +144,71 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
+func TestEnvTokenReader(t *testing.T) {
+	// Not parallel, the subtests set environment variables.
+	for _, tc := range []struct {
+		name     string
+		env      map[string]string
+		expected string
+		mustErr  bool
+	}{
+		{
+			name:     "the first variable wins",
+			env:      map[string]string{"GITHUB_TOKEN": "from-github", "GH_TOKEN": "from-gh"},
+			expected: "from-github",
+		},
+		{
+			name:     "falls back to the next one",
+			env:      map[string]string{"GITHUB_TOKEN": "", "GH_TOKEN": "from-gh"},
+			expected: "from-gh",
+		},
+		{
+			name:    "nothing set",
+			env:     map[string]string{"GITHUB_TOKEN": "", "GH_TOKEN": ""},
+			mustErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, value := range tc.env {
+				t.Setenv(name, value)
+			}
+
+			token, err := (&EnvTokenReader{VarNames: tokenEnvVars}).ReadToken()
+			if tc.mustErr {
+				if err == nil {
+					t.Fatalf("expected an error, got token %q", token)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("reading token: %v", err)
+			}
+			if token != tc.expected {
+				t.Errorf("token = %q, want %q", token, tc.expected)
+			}
+		})
+	}
+}
+
+func TestNewGitHubResolver(t *testing.T) {
+	// Not parallel, it sets the environment tokens.
+	for _, token := range []string{"a-token", ""} {
+		t.Setenv("GITHUB_TOKEN", token)
+		t.Setenv("GH_TOKEN", "")
+
+		// A resolver builds with a token in the environment and without
+		// one: calls are made anonymously when there is nothing to
+		// authenticate with.
+		resolver, err := NewGitHubResolver()
+		if err != nil {
+			t.Fatalf("creating resolver: %v", err)
+		}
+		if resolver == nil {
+			t.Fatal("creating resolver returned nothing")
+		}
+	}
+}
+
 func TestSourceRepository(t *testing.T) {
 	t.Parallel()
 	caller := &stubCaller{
