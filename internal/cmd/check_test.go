@@ -49,10 +49,10 @@ func TestBumps(t *testing.T) {
 	}
 
 	expected := []bump{
-		{Workflow: ci, Action: "actions/checkout", Using: "v4.2.2", Latest: "v7.0.1", Lines: []int{4, 12}},
-		{Workflow: ci, Action: "actions/setup-go", Using: "v5.5.0", Latest: "v7.0.0", Lines: []int{5}},
-		{Workflow: release, Action: "actions/checkout", Using: "v4.2.2", Latest: "v7.0.1", Lines: []int{4}},
-		{Workflow: release, Action: "actions/checkout", Using: "v5.0.0", Latest: "v7.0.1", Lines: []int{5}},
+		{Workflow: ci, Action: "actions/checkout", Using: "v4.2.2", Latest: "v7.0.1 (3d3c42e…)", Lines: []int{4, 12}},
+		{Workflow: ci, Action: "actions/setup-go", Using: "v5.5.0", Latest: "v7.0.0 (b7ad1da…)", Lines: []int{5}},
+		{Workflow: release, Action: "actions/checkout", Using: "v4.2.2", Latest: "v7.0.1 (3d3c42e…)", Lines: []int{4}},
+		{Workflow: release, Action: "actions/checkout", Using: "v5.0.0", Latest: "v7.0.1 (3d3c42e…)", Lines: []int{5}},
 	}
 
 	got := bumps(refs, updates)
@@ -62,6 +62,38 @@ func TestBumps(t *testing.T) {
 
 	if list := got[0].lineList(); list != "4, 12" {
 		t.Errorf("lineList() = %q, want %q", list, "4, 12")
+	}
+}
+
+func TestRelease(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		release  pinpoint.Release
+		expected string
+	}{
+		{
+			name:     "the hash is previewed next to the version",
+			release:  pinpoint.Release{Tag: "v4.4.0", Commit: "11d5960a326750d5838078e36cf38b85af677262"},
+			expected: "v4.4.0 (11d5960…)",
+		},
+		{
+			name:     "a version with no commit is shown alone",
+			release:  pinpoint.Release{Tag: "main"},
+			expected: "main",
+		},
+		{
+			name:     "nothing resolved",
+			release:  pinpoint.Release{},
+			expected: unknownVersion,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := release(tc.release); got != tc.expected {
+				t.Errorf("release() = %q, want %q", got, tc.expected)
+			}
+		})
 	}
 }
 
@@ -80,7 +112,7 @@ func TestPinnedVersion(t *testing.T) {
 		{
 			name:     "without a comment the hash is abbreviated",
 			ref:      pinpoint.Reference{Uses: "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"},
-			expected: "11bd719",
+			expected: "11bd719…",
 		},
 		{
 			name:     "nothing to show",

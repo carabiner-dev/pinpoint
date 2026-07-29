@@ -432,25 +432,51 @@ func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoin
 	return nil
 }
 
+// shortHashLength is how much of a commit hash is shown when previewing the
+// value an entry would be pinned to.
+const shortHashLength = 7
+
 // pinTarget returns the version `pinpoint pin` would pin a reference to: the
-// release naming the version the entry is already using. Entries pinpoint
-// cannot resolve get a mark, they are the ones pin leaves alone.
+// release naming the version the entry is already using, with a preview of
+// the hash that would land in the file. Entries pinpoint cannot resolve get a
+// mark, they are the ones pin leaves alone.
 func pinTarget(ref *pinpoint.Reference, updates *pinpoint.Updates) string {
 	status, ok := updates.Status(ref)
-	if !ok || status.Pin.Tag == "" {
+	if !ok {
 		return unknownVersion
 	}
-	return status.Pin.Tag
+	return release(status.Pin)
 }
 
-// latestVersion returns the tag of the newest release of the action used by
-// a reference, or a mark when pinpoint could not find out.
+// latestVersion returns the newest release of the action used by a reference
+// and the hash an upgrade would pin it to, or a mark when pinpoint could not
+// find out.
 func latestVersion(ref *pinpoint.Reference, updates *pinpoint.Updates) string {
 	status, ok := updates.Status(ref)
-	if !ok || status.Latest.Tag == "" {
+	if !ok {
 		return unknownVersion
 	}
-	return status.Latest.Tag
+	return release(status.Latest)
+}
+
+// release renders a version as its tag followed by a preview of the commit
+// it points at, for example "v4.4.0 (11d5960…)".
+func release(release pinpoint.Release) string {
+	if release.Tag == "" {
+		return unknownVersion
+	}
+	if release.Commit == "" {
+		return release.Tag
+	}
+	return fmt.Sprintf("%s (%s)", release.Tag, shortHash(release.Commit))
+}
+
+// shortHash abbreviates a commit hash, marking that it was cut short.
+func shortHash(commit string) string {
+	if len(commit) <= shortHashLength {
+		return commit
+	}
+	return commit[:shortHashLength] + "…"
 }
 
 // pinnedVersion returns the version a pinned reference is using: the comment
@@ -461,11 +487,8 @@ func pinnedVersion(ref *pinpoint.Reference) string {
 	}
 
 	version := ref.Version()
-	if len(version) > 7 {
-		return version[:7]
-	}
 	if version == "" {
 		return unknownVersion
 	}
-	return version
+	return shortHash(version)
 }
