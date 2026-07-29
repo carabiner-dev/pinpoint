@@ -170,7 +170,7 @@ func (r *Report) Predicate(updates *Updates) *Predicate {
 	p := &Predicate{
 		Tool:           toolDescriptor(),
 		Date:           time.Now().UTC().Format(time.RFC3339),
-		UpdatesChecked: updates != nil,
+		UpdatesChecked: updates.LatestChecked(),
 		Workflows:      []string{},
 		References:     []PredicateReference{},
 		Summary: PredicateSummary{

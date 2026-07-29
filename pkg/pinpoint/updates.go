@@ -25,19 +25,46 @@ type UpdateStatus struct {
 // indexed by the value of their `uses:` entry: two entries using the same
 // action at the same version share a status.
 type Updates struct {
-	statuses   map[string]UpdateStatus
-	unresolved []Skip
+	statuses      map[string]UpdateStatus
+	unresolved    []Skip
+	latestChecked bool
+}
+
+// checkOptions configures a version lookup.
+type checkOptions struct {
+	latestReleases bool
+}
+
+// CheckOption configures how CheckUpdates looks up versions.
+type CheckOption func(*checkOptions)
+
+// WithLatestReleases controls whether the newest release of each action is
+// looked up. Turning it off leaves only the versions the unpinned entries
+// would be pinned to, at the cost of not knowing what is outdated.
+func WithLatestReleases(check bool) CheckOption {
+	return func(o *checkOptions) {
+		o.latestReleases = check
+	}
 }
 
 // CheckUpdates looks up the versions available for every reference received:
-// the latest release of each action and, for the entries that are not pinned
-// yet, the version they would be pinned to. References that cannot be
-// resolved (local actions, container images, repositories with no releases)
-// are left out of the result and reported as unknown.
-func CheckUpdates(ctx context.Context, resolver Resolver, refs []Reference) (*Updates, error) {
-	latest, err := (&Updater{Resolver: resolver, Upgrade: true}).Plan(ctx, refs)
-	if err != nil {
-		return nil, err
+// the version each unpinned entry would be pinned to and, unless disabled
+// with WithLatestReleases, the latest release of each action. References that
+// cannot be resolved (local actions, container images, repositories with no
+// releases) are left out of the result and reported as unknown.
+func CheckUpdates(ctx context.Context, resolver Resolver, refs []Reference, opts ...CheckOption) (*Updates, error) {
+	options := checkOptions{latestReleases: true}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	var latest *Plan
+	if options.latestReleases {
+		plan, err := (&Updater{Resolver: resolver, Upgrade: true}).Plan(ctx, refs)
+		if err != nil {
+			return nil, err
+		}
+		latest = plan
 	}
 
 	// The same references as an updater that is not upgrading sees them.
@@ -57,7 +84,10 @@ func CheckUpdates(ctx context.Context, resolver Resolver, refs []Reference) (*Up
 // upgrading, it carries the version each unpinned entry would be pinned to.
 // A nil plan simply contributes nothing.
 func NewUpdates(latest, pin *Plan) *Updates {
-	updates := &Updates{statuses: map[string]UpdateStatus{}}
+	updates := &Updates{
+		statuses:      map[string]UpdateStatus{},
+		latestChecked: latest != nil,
+	}
 
 	if latest != nil {
 		for i := range latest.Updates {
@@ -104,6 +134,13 @@ func (u *Updates) Status(ref *Reference) (UpdateStatus, bool) {
 	}
 	status, ok := u.statuses[ref.Uses]
 	return status, ok
+}
+
+// LatestChecked reports whether the newest release of the actions was looked
+// up. It is false when only the pin targets were resolved, and nothing can
+// be said about references being outdated.
+func (u *Updates) LatestChecked() bool {
+	return u != nil && u.latestChecked
 }
 
 // Unresolved returns the references pinpoint asked the forge about and got

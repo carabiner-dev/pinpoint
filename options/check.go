@@ -20,10 +20,12 @@ type Check struct {
 	Attest bool
 
 	// Updates makes pinpoint look up the latest release of the actions to
-	// report the references that have a newer version available. It also
-	// gates the lookup of the repository a fork was created from: it is
-	// the switch that lets pinpoint reach the forge.
+	// report the references that have a newer version available.
 	Updates bool
+
+	// Offline stops pinpoint from calling the forge at all: no versions
+	// are resolved and no repository is checked for being a fork.
+	Offline bool
 }
 
 // AddFlags adds the check flags to a command.
@@ -35,6 +37,10 @@ func (co *Check) AddFlags(cmd *cobra.Command) {
 	)
 	cmd.PersistentFlags().BoolVar(
 		&co.Updates, "updates", true,
-		"query the forge for the latest releases and the source of forked repositories",
+		"report the references that have a newer release available",
+	)
+	cmd.PersistentFlags().BoolVar(
+		&co.Offline, "offline", false,
+		"make no calls to the forge, no versions are resolved",
 	)
 }

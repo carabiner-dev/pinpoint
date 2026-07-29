@@ -3,7 +3,81 @@
 
 package pinpoint
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestCheckUpdates(t *testing.T) {
+	t.Parallel()
+	refs := []Reference{
+		{Uses: "actions/checkout@v4", Kind: KindAction},
+		{Uses: "actions/setup-go@1234567890123456789012345678901234567890", Kind: KindAction},
+	}
+
+	newResolver := func() *stubResolver {
+		return &stubResolver{
+			releases: map[string]Release{
+				"actions/checkout": {Tag: "v7.0.1", Commit: "3d3c42e5"},
+				"actions/setup-go": {Tag: "v7.0.0", Commit: "b7ad1dad"},
+			},
+			versions: map[string]Release{
+				"actions/checkout@v4": {Tag: "v4.4.0", Commit: "11d5960a"},
+			},
+		}
+	}
+
+	t.Run("with latest releases", func(t *testing.T) {
+		t.Parallel()
+		resolver := newResolver()
+		updates, err := CheckUpdates(t.Context(), resolver, refs)
+		if err != nil {
+			t.Fatalf("checking updates: %v", err)
+		}
+		if !updates.LatestChecked() {
+			t.Error("updates do not report the latest releases as checked")
+		}
+
+		status, _ := updates.Status(&refs[0])
+		if status.Pin.Tag != "v4.4.0" || status.Latest.Tag != "v7.0.1" {
+			t.Errorf("unexpected status: %+v", status)
+		}
+		if !updates.Outdated(&refs[1]) {
+			t.Error("the pinned reference should be reported as outdated")
+		}
+	})
+
+	t.Run("without latest releases", func(t *testing.T) {
+		t.Parallel()
+		resolver := newResolver()
+		updates, err := CheckUpdates(t.Context(), resolver, refs, WithLatestReleases(false))
+		if err != nil {
+			t.Fatalf("checking updates: %v", err)
+		}
+		if updates.LatestChecked() {
+			t.Error("updates report releases as checked when they were not")
+		}
+
+		// The pin target is still resolved, nothing else is.
+		status, ok := updates.Status(&refs[0])
+		if !ok || status.Pin.Tag != "v4.4.0" {
+			t.Errorf("unexpected status: %+v", status)
+		}
+		if status.Latest.Tag != "" || status.Outdated {
+			t.Errorf("status carries release data: %+v", status)
+		}
+		if updates.Outdated(&refs[1]) {
+			t.Error("nothing can be outdated when releases were not looked up")
+		}
+
+		// Only the version in use was asked about.
+		for _, call := range resolver.calls {
+			if !strings.Contains(call, "@") {
+				t.Errorf("resolver was asked for the latest release of %q", call)
+			}
+		}
+	})
+}
 
 func TestUpdates(t *testing.T) {
 	t.Parallel()

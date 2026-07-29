@@ -34,8 +34,13 @@ would be pinned to by ` + appName + ` pin.
 Pinpoint also looks up the versions of the references that are pinned
 and reports those that have a newer release, so that the output covers
 both halves of keeping actions under control: pinning them and keeping
-them current. Only the unpinned ones fail the command. Pass
---updates=false to skip the lookups and run offline.
+them current. Only the unpinned ones fail the command.
+
+Two flags control how much pinpoint asks the forge. With --updates=false
+it stops reporting the references that have a newer release, but still
+resolves the version each unpinned entry would be pinned to. With
+--offline it makes no calls at all: the scan then only knows which
+references are pinned and which are not.
 
 The directory to scan can be specified as the first argument. The
 command exits with an error if any unpinned references are found.
@@ -50,8 +55,8 @@ whoever evaluates it.
 Scans often run in a fork, which is not the project the code belongs to.
 Pinpoint asks the forge which repository a fork was created from and
 names that one in the subject, noting the fork it read the workflows
-from in the subject annotations. With --updates=false the subject names
-the repository as the local origin remote has it.
+from in the subject annotations. With --offline the subject names the
+repository as the local origin remote has it.
 
 Versions are read from the GitHub API through the carabiner GitHub
 client. Export a token in GITHUB_TOKEN or GH_TOKEN to authenticate the
@@ -76,7 +81,7 @@ to a handful of scans per hour.
 			// One resolver serves the version lookups and the search for
 			// the repository a fork was created from.
 			var resolver *pinpoint.GitHubResolver
-			if opts.Updates {
+			if !opts.Offline {
 				resolver, err = newResolver(cmd)
 				if err != nil {
 					return err
@@ -85,7 +90,7 @@ to a handful of scans per hour.
 
 			var updates *pinpoint.Updates
 			if resolver != nil {
-				updates, err = checkUpdates(cmd, resolver, report)
+				updates, err = checkUpdates(cmd, resolver, report, opts.Updates)
 				if err != nil {
 					return err
 				}
@@ -116,8 +121,12 @@ func newResolver(cmd *cobra.Command) (*pinpoint.GitHubResolver, error) {
 // checkUpdates looks up the versions available for the references of a
 // report. Lookup errors leave the command without version data instead of
 // stopping it.
-func checkUpdates(cmd *cobra.Command, resolver pinpoint.Resolver, report *pinpoint.Report) (*pinpoint.Updates, error) {
-	updates, err := pinpoint.CheckUpdates(cmd.Context(), resolver, report.References)
+func checkUpdates(
+	cmd *cobra.Command, resolver pinpoint.Resolver, report *pinpoint.Report, latest bool,
+) (*pinpoint.Updates, error) {
+	updates, err := pinpoint.CheckUpdates(
+		cmd.Context(), resolver, report.References, pinpoint.WithLatestReleases(latest),
+	)
 	if err != nil {
 		return nil, warnNoUpdates(cmd, err)
 	}
@@ -171,7 +180,7 @@ func writeReport(w io.Writer, report *pinpoint.Report, updates *pinpoint.Updates
 
 	if len(unpinned) == 0 && len(outdated) == 0 {
 		message := "All action references are pinned to hashes."
-		if updates != nil {
+		if updates.LatestChecked() {
 			message = "All action references are pinned to hashes and up to date."
 		}
 		_, err := fmt.Fprintln(w, message)
