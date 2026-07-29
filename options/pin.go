@@ -23,6 +23,9 @@ type Pin struct {
 	// Upgrade makes pinpoint pin the references to the latest release of
 	// each action instead of to the version they already track.
 	Upgrade bool
+
+	// Yes writes the changes without asking for confirmation first.
+	Yes bool
 }
 
 // AddFlags adds the pin flags to a command.
@@ -35,5 +38,9 @@ func (po *Pin) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&po.Upgrade, "upgrade", false,
 		"pin to the latest release of each action instead of to the version in use",
+	)
+	cmd.PersistentFlags().BoolVarP(
+		&po.Yes, "yes", "y", false,
+		"write the changes without asking for confirmation",
 	)
 }

@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/carabiner-dev/termtable"
 	"github.com/spf13/cobra"
@@ -48,6 +51,12 @@ definitions (action.yml files) found in the repository, skipping the
 
 References that cannot be pinned to a repository commit (local actions
 and those run from container images) are left untouched.
+
+The changes are listed before anything is written and confirmed with a
+question, so a run can be inspected before it touches the workflows.
+Answer y to write them, anything else leaves the files alone. Use --yes
+to skip the question, which is also what unattended runs need: with no
+one to answer, pinpoint stops instead of guessing.
 
 Versions are read from the GitHub API through the carabiner GitHub
 client. Export a token in GITHUB_TOKEN or GH_TOKEN to authenticate the
@@ -92,6 +101,23 @@ to a handful of scans per hour.
 				return err
 			}
 
+			// Show what the run would write before writing it, the table
+			// doubles as the preview the question refers to.
+			if len(plan.Updates) > 0 {
+				if err := writeUpdatesTable(cmd.OutOrStdout(), plan.Updates); err != nil {
+					return err
+				}
+			}
+
+			pin, err := confirmPin(cmd, len(plan.Updates), opts.Yes)
+			if err != nil {
+				return err
+			}
+			if !pin {
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), "Nothing was pinned.")
+				return err
+			}
+
 			modified, err := updater.Apply(opts.Path, plan.Updates)
 			if err != nil {
 				return err
@@ -104,15 +130,36 @@ to a handful of scans per hour.
 	parent.AddCommand(pinCmd)
 }
 
+// confirmPin asks whether the entries pinpoint resolved should be written to
+// the workflows. There is nothing to ask when the run found no changes to
+// make or when the caller already said yes with --yes.
+func confirmPin(cmd *cobra.Command, updates int, assumeYes bool) (bool, error) {
+	if updates == 0 || assumeYes {
+		return true, nil
+	}
+
+	if _, err := fmt.Fprintf(
+		cmd.OutOrStdout(), "Pin %d action(s) to hashes? (y/N) ", updates,
+	); err != nil {
+		return false, fmt.Errorf("writing question: %w", err)
+	}
+
+	answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("reading answer: %w", err)
+	}
+
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer == "" && errors.Is(err, io.EOF) {
+		return false, errors.New("nothing to read the answer from, use --yes to pin without asking")
+	}
+
+	return answer == "y" || answer == "yes", nil
+}
+
 // writePinResults reports the references that were pinned and those that
 // could not be resolved.
 func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error {
-	if len(plan.Updates) > 0 {
-		if err := writeUpdatesTable(w, plan.Updates); err != nil {
-			return err
-		}
-	}
-
 	summary := "No action references were updated.\n"
 	if len(plan.Updates) > 0 {
 		summary = fmt.Sprintf(
