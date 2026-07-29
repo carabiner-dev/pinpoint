@@ -160,13 +160,8 @@ func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error 
 
 // writeUpdatesTable renders the applied updates as a table.
 func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
-	t := termtable.NewTable()
-
-	head := t.AddHeader()
-	head.AddCell(termtable.WithContent("File"))
-	head.AddCell(termtable.WithContent("Line"))
-	head.AddCell(termtable.WithContent("Action"))
-	head.AddCell(termtable.WithContent("Version"))
+	t := newTable()
+	addHeader(t, "File", "Line", "Action", "Version")
 
 	styleFileColumn(t, 0)
 	t.Column(1).SetAlign(termtable.AlignRight)
@@ -191,8 +186,5 @@ func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
 	t.Column(1).SetWidth(narrowWidth("Line", lines...))
 	t.Column(3).SetWidth(narrowWidth("Version", versions...))
 
-	if _, err := fmt.Fprint(w, t.String()); err != nil {
-		return fmt.Errorf("writing updates table: %w", err)
-	}
-	return nil
+	return printTable(w, t)
 }

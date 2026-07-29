@@ -197,11 +197,6 @@ func writeReport(w io.Writer, report *pinpoint.Report, updates *pinpoint.Updates
 	}
 
 	if len(outdated) > 0 {
-		if len(unpinned) > 0 {
-			if _, err := fmt.Fprintln(w); err != nil {
-				return fmt.Errorf("writing findings: %w", err)
-			}
-		}
 		if _, err := fmt.Fprintln(w, "Pinned references with a newer release available:"); err != nil {
 			return fmt.Errorf("writing findings: %w", err)
 		}
@@ -262,16 +257,13 @@ const unknownVersion = "?"
 // writeTable renders the unpinned references as a table, with the version
 // each entry would be pinned to when it is known.
 func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Updates) error {
-	t := termtable.NewTable()
-
-	head := t.AddHeader()
-	head.AddCell(termtable.WithContent("Workflow"))
-	head.AddCell(termtable.WithContent("Line"))
-	head.AddCell(termtable.WithContent("Job"))
-	head.AddCell(termtable.WithContent("Action"))
+	titles := []string{"Workflow", "Line", "Job", "Action"}
 	if updates != nil {
-		head.AddCell(termtable.WithContent("Pin to"))
+		titles = append(titles, "Pin to")
 	}
+
+	t := newTable()
+	addHeader(t, titles...)
 
 	// Keep every finding on a single line, trimming the ones that overflow.
 	// The versions column is only created when we have versions to show,
@@ -313,10 +305,7 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 		t.Column(4).SetWidth(narrowWidth("Pin to", targets...))
 	}
 
-	if _, err := fmt.Fprint(w, t.String()); err != nil {
-		return fmt.Errorf("writing findings table: %w", err)
-	}
-	return nil
+	return printTable(w, t)
 }
 
 // maxLinesWidth caps the width of the column listing the lines of a bump so
@@ -387,14 +376,8 @@ func (b *bump) lineList() string {
 // older than the latest release of the action, one row per action version
 // in each workflow.
 func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Updates) error {
-	t := termtable.NewTable()
-
-	head := t.AddHeader()
-	head.AddCell(termtable.WithContent("Workflow"))
-	head.AddCell(termtable.WithContent("Lines"))
-	head.AddCell(termtable.WithContent("Action"))
-	head.AddCell(termtable.WithContent("Using"))
-	head.AddCell(termtable.WithContent("Latest"))
+	t := newTable()
+	addHeader(t, "Workflow", "Lines", "Action", "Using", "Latest")
 
 	styleFileColumn(t, 0)
 	// The lines are the one column allowed to wrap: a long list is better
@@ -426,10 +409,7 @@ func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoin
 	t.Column(3).SetWidth(narrowWidth("Using", usings...))
 	t.Column(4).SetWidth(narrowWidth("Latest", latests...))
 
-	if _, err := fmt.Fprint(w, t.String()); err != nil {
-		return fmt.Errorf("writing findings table: %w", err)
-	}
-	return nil
+	return printTable(w, t)
 }
 
 // shortHashLength is how much of a commit hash is shown when previewing the
