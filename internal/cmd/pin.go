@@ -208,7 +208,7 @@ func writePinResults(w io.Writer, plan *pinpoint.Plan, modified []string) error 
 // writeUpdatesTable renders the applied updates as a table.
 func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
 	t := newTable()
-	addHeader(t, "File", "Line", "Action", "Version")
+	addHeader(t, "File", "Line", "Action", "Pin to")
 
 	styleFileColumn(t, 0)
 	t.Column(1).SetAlign(termtable.AlignRight)
@@ -216,22 +216,23 @@ func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
 	t.Column(3).Style("white-space: nowrap")
 
 	lines := make([]string, 0, len(updates))
-	versions := make([]string, 0, len(updates))
+	targets := make([]string, 0, len(updates))
 	for i := range updates {
 		update := &updates[i]
 		line := strconv.Itoa(update.Reference.Line)
+		target := release(update.Release)
 		lines = append(lines, line)
-		versions = append(versions, update.Release.Tag)
+		targets = append(targets, target)
 
 		row := t.AddRow()
 		row.AddCell(termtable.WithContent(update.Reference.Workflow))
 		row.AddCell(termtable.WithContent(line))
 		row.AddCell(termtable.WithContent(update.Reference.Uses))
-		row.AddCell(termtable.WithContent(update.Release.Tag))
+		row.AddCell(termtable.WithContent(target))
 	}
 
 	t.Column(1).SetWidth(narrowWidth("Line", lines...))
-	t.Column(3).SetWidth(narrowWidth("Version", versions...))
+	t.Column(3).SetWidth(narrowWidth("Pin to", targets...))
 
 	return printTable(w, t)
 }
