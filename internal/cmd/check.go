@@ -27,8 +27,8 @@ func addCheck(parent *cobra.Command) {
 
 The check subcommand scans the GitHub Actions workflows found in a
 directory (the current one by default) and lists the action references
-that are not pinned to a commit hash, along with the latest release
-available for each one.
+that are not pinned to a commit hash, along with the version each one
+would be pinned to by ` + appName + ` pin.
 
 Pinpoint also looks up the versions of the references that are pinned
 and reports those that have a newer release, so that the output covers
@@ -225,8 +225,8 @@ func writeAttestation(
 // action is at, or which one is the newest.
 const unknownVersion = "?"
 
-// writeTable renders the unpinned references as a table, with the latest
-// release of each action when it is known.
+// writeTable renders the unpinned references as a table, with the version
+// each entry would be pinned to when it is known.
 func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Updates) error {
 	t := termtable.NewTable()
 
@@ -236,7 +236,7 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 	head.AddCell(termtable.WithContent("Job"))
 	head.AddCell(termtable.WithContent("Action"))
 	if updates != nil {
-		head.AddCell(termtable.WithContent("Latest"))
+		head.AddCell(termtable.WithContent("Pin to"))
 	}
 
 	// Keep every finding on a single line, trimming the ones that overflow.
@@ -252,7 +252,7 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 
 	lines := make([]string, 0, len(refs))
 	jobs := make([]string, 0, len(refs))
-	latests := make([]string, 0, len(refs))
+	targets := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		line := strconv.Itoa(ref.Line)
 		lines = append(lines, line)
@@ -265,9 +265,9 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 		row.AddCell(termtable.WithContent(ref.Uses))
 
 		if updates != nil {
-			latest := latestVersion(&ref, updates)
-			latests = append(latests, latest)
-			row.AddCell(termtable.WithContent(latest))
+			target := pinTarget(&ref, updates)
+			targets = append(targets, target)
+			row.AddCell(termtable.WithContent(target))
 		}
 	}
 
@@ -276,7 +276,7 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 	t.Column(1).SetWidth(narrowWidth("Line", lines...))
 	t.Column(2).SetWidth(narrowWidth("Job", jobs...))
 	if updates != nil {
-		t.Column(4).SetWidth(narrowWidth("Latest", latests...))
+		t.Column(4).SetWidth(narrowWidth("Pin to", targets...))
 	}
 
 	if _, err := fmt.Fprint(w, t.String()); err != nil {
@@ -396,6 +396,17 @@ func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoin
 		return fmt.Errorf("writing findings table: %w", err)
 	}
 	return nil
+}
+
+// pinTarget returns the version `pinpoint pin` would pin a reference to: the
+// release naming the version the entry is already using. Entries pinpoint
+// cannot resolve get a mark, they are the ones pin leaves alone.
+func pinTarget(ref *pinpoint.Reference, updates *pinpoint.Updates) string {
+	status, ok := updates.Status(ref)
+	if !ok || status.Pin.Tag == "" {
+		return unknownVersion
+	}
+	return status.Pin.Tag
 }
 
 // latestVersion returns the tag of the newest release of the action used by

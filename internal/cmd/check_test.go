@@ -32,7 +32,7 @@ func TestBumps(t *testing.T) {
 				Release:   pinpoint.Release{Tag: "v7.0.1", Commit: "3d3c42e5aac5ba805825da76410c181273ba90b1"},
 			},
 		},
-	})
+	}, nil)
 
 	ci := ".github/workflows/ci.yaml"
 	release := ".github/workflows/release.yaml"

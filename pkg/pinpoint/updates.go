@@ -14,6 +14,11 @@ type UpdateStatus struct {
 	// Outdated is true when the reference does not point at the commit of
 	// the latest release.
 	Outdated bool
+
+	// Pin is the version an unpinned reference would be pinned to without
+	// an upgrade: the release naming the version the entry already uses.
+	// It is empty for the references that are already pinned.
+	Pin Release
 }
 
 // Updates holds the versions available for the references of a report,
@@ -23,45 +28,63 @@ type Updates struct {
 	statuses map[string]UpdateStatus
 }
 
-// CheckUpdates looks up the latest release of every reference received and
-// returns what is available for each one. References that cannot be resolved
-// (local actions, container images, repositories with no releases) are left
-// out of the result and reported as unknown.
+// CheckUpdates looks up the versions available for every reference received:
+// the latest release of each action and, for the entries that are not pinned
+// yet, the version they would be pinned to. References that cannot be
+// resolved (local actions, container images, repositories with no releases)
+// are left out of the result and reported as unknown.
 func CheckUpdates(ctx context.Context, resolver Resolver, refs []Reference) (*Updates, error) {
-	updater := &Updater{Resolver: resolver, Upgrade: true}
-
-	plan, err := updater.Plan(ctx, refs)
+	latest, err := (&Updater{Resolver: resolver, Upgrade: true}).Plan(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	return NewUpdates(plan), nil
+
+	// The same references as an updater that is not upgrading sees them.
+	// Entries already pinned are skipped without reaching the forge, so
+	// this only resolves the versions the unpinned ones are using.
+	pin, err := (&Updater{Resolver: resolver}).Plan(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewUpdates(latest, pin), nil
 }
 
-// NewUpdates indexes the versions resolved while planning a set of updates.
-// Plans are computed by an updater set to upgrade, any other plan resolves
-// the versions in use instead of the latest ones.
-func NewUpdates(plan *Plan) *Updates {
+// NewUpdates indexes the versions resolved by a pair of plans. The latest
+// plan is the one of an updater set to upgrade, it carries the newest
+// release of every action. The pin plan is the one of an updater that is not
+// upgrading, it carries the version each unpinned entry would be pinned to.
+// A nil plan simply contributes nothing.
+func NewUpdates(latest, pin *Plan) *Updates {
 	updates := &Updates{statuses: map[string]UpdateStatus{}}
-	if plan == nil {
-		return updates
-	}
 
-	for i := range plan.Updates {
-		update := &plan.Updates[i]
-		updates.statuses[update.Reference.Uses] = UpdateStatus{
-			Latest:   update.Release,
-			Outdated: true,
+	if latest != nil {
+		for i := range latest.Updates {
+			update := &latest.Updates[i]
+			updates.statuses[update.Reference.Uses] = UpdateStatus{
+				Latest:   update.Release,
+				Outdated: true,
+			}
+		}
+
+		for i := range latest.Skipped {
+			skip := &latest.Skipped[i]
+			if skip.Release == nil {
+				continue
+			}
+			updates.statuses[skip.Reference.Uses] = UpdateStatus{
+				Latest:   *skip.Release,
+				Outdated: false,
+			}
 		}
 	}
 
-	for i := range plan.Skipped {
-		skip := &plan.Skipped[i]
-		if skip.Release == nil {
-			continue
-		}
-		updates.statuses[skip.Reference.Uses] = UpdateStatus{
-			Latest:   *skip.Release,
-			Outdated: false,
+	if pin != nil {
+		for i := range pin.Updates {
+			update := &pin.Updates[i]
+			status := updates.statuses[update.Reference.Uses]
+			status.Pin = update.Release
+			updates.statuses[update.Reference.Uses] = status
 		}
 	}
 

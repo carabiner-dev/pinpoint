@@ -125,7 +125,7 @@ func TestPredicateUpdates(t *testing.T) {
 			},
 			{Reference: Reference{Uses: "docker://alpine:3.22"}, Reason: SkipContainer},
 		},
-	})
+	}, nil)
 
 	predicate = report.Predicate(updates)
 	if !predicate.UpdatesChecked {
