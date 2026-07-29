@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // usesLineRegexp captures the pieces of a line defining a `uses:` entry: the
@@ -94,6 +95,11 @@ type Plan struct {
 	Skipped []Skip
 }
 
+// defaultConcurrency is how many references are resolved at the same time.
+// The forge is the slow part, but asking it too many things at once is a
+// good way to get throttled.
+const defaultConcurrency = 8
+
 // Updater computes and applies the updates that pin action references to a
 // commit hash.
 type Updater struct {
@@ -104,6 +110,10 @@ type Updater struct {
 	// of each action. When false, references are pinned to the commit their
 	// current version points at.
 	Upgrade bool
+
+	// Concurrency is how many references are resolved in parallel. Zero
+	// selects a sensible default.
+	Concurrency int
 }
 
 // UpdaterOption configures an updater.
@@ -115,6 +125,21 @@ func WithUpgrade(upgrade bool) UpdaterOption {
 	return func(u *Updater) {
 		u.Upgrade = upgrade
 	}
+}
+
+// WithConcurrency sets how many references the updater resolves in parallel.
+func WithConcurrency(workers int) UpdaterOption {
+	return func(u *Updater) {
+		u.Concurrency = workers
+	}
+}
+
+// concurrency returns the number of references to resolve in parallel.
+func (u *Updater) concurrency() int {
+	if u.Concurrency > 0 {
+		return u.Concurrency
+	}
+	return defaultConcurrency
 }
 
 // NewUpdater creates an updater that resolves versions using the GitHub API.
@@ -142,50 +167,83 @@ func (u *Updater) Plan(ctx context.Context, refs []Reference) (*Plan, error) {
 		return nil, errors.New("updater has no resolver configured")
 	}
 
+	// Every reference is resolved on its own, so they go out in parallel:
+	// the forge round trips are the slow part of a scan. Results are
+	// collected by index to keep the plan in the order of the references.
+	outcomes := make([]outcome, len(refs))
+	workers := make(chan struct{}, u.concurrency())
+
+	var wg sync.WaitGroup
+	for i := range refs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			workers <- struct{}{}
+			defer func() { <-workers }()
+
+			outcomes[i] = u.planReference(ctx, &refs[i])
+		}(i)
+	}
+	wg.Wait()
+
 	plan := &Plan{}
-	for _, ref := range refs {
-		switch ref.Kind {
-		case KindLocal:
-			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipLocal})
-			continue
-		case KindContainer:
-			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipContainer})
-			continue
-		case KindAction, KindReusableWorkflow:
+	for i := range outcomes {
+		switch {
+		case outcomes[i].update != nil:
+			plan.Updates = append(plan.Updates, *outcomes[i].update)
+		case outcomes[i].skip != nil:
+			plan.Skipped = append(plan.Skipped, *outcomes[i].skip)
 		}
-
-		repository := ref.Repository()
-		if repository == "" {
-			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipNoRepository})
-			continue
-		}
-
-		// Without an upgrade there is nothing to do to a reference that
-		// already points at a commit.
-		if !u.Upgrade && ref.IsPinned() {
-			plan.Skipped = append(plan.Skipped, Skip{Reference: ref, Reason: SkipPinned})
-			continue
-		}
-
-		release, err := u.resolve(ctx, &ref, repository)
-		if err != nil {
-			plan.Skipped = append(plan.Skipped, Skip{
-				Reference: ref, Reason: SkipUnresolved, Err: err,
-			})
-			continue
-		}
-
-		if ref.Version() == release.Commit {
-			plan.Skipped = append(plan.Skipped, Skip{
-				Reference: ref, Reason: SkipUpToDate, Release: release,
-			})
-			continue
-		}
-
-		plan.Updates = append(plan.Updates, Update{Reference: ref, Release: *release})
 	}
 
 	return plan, nil
+}
+
+// outcome is what planning a single reference produced: it either becomes an
+// update or a skip.
+type outcome struct {
+	update *Update
+	skip   *Skip
+}
+
+// planReference works out what should happen to a single reference.
+func (u *Updater) planReference(ctx context.Context, ref *Reference) outcome {
+	skip := func(reason SkipReason, release *Release, err error) outcome {
+		return outcome{skip: &Skip{
+			Reference: *ref, Reason: reason, Release: release, Err: err,
+		}}
+	}
+
+	switch ref.Kind {
+	case KindLocal:
+		return skip(SkipLocal, nil, nil)
+	case KindContainer:
+		return skip(SkipContainer, nil, nil)
+	case KindAction, KindReusableWorkflow:
+	}
+
+	repository := ref.Repository()
+	if repository == "" {
+		return skip(SkipNoRepository, nil, nil)
+	}
+
+	// Without an upgrade there is nothing to do to a reference that already
+	// points at a commit.
+	if !u.Upgrade && ref.IsPinned() {
+		return skip(SkipPinned, nil, nil)
+	}
+
+	release, err := u.resolve(ctx, ref, repository)
+	if err != nil {
+		return skip(SkipUnresolved, nil, err)
+	}
+
+	if ref.Version() == release.Commit {
+		return skip(SkipUpToDate, release, nil)
+	}
+
+	return outcome{update: &Update{Reference: *ref, Release: *release}}
 }
 
 // resolve returns the version a reference is to be pinned to.

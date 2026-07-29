@@ -8,7 +8,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -17,11 +20,29 @@ import (
 type stubResolver struct {
 	releases map[string]Release
 	versions map[string]Release
-	calls    []string
+
+	mtx   sync.Mutex
+	calls []string
+}
+
+// lookups returns the sorted list of lookups the resolver was asked for.
+// References resolve in parallel, so the order they arrive in is not fixed.
+func (s *stubResolver) lookups() []string {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	sorted := append([]string(nil), s.calls...)
+	sort.Strings(sorted)
+	return sorted
+}
+
+func (s *stubResolver) record(lookup string) {
+	s.mtx.Lock()
+	s.calls = append(s.calls, lookup)
+	s.mtx.Unlock()
 }
 
 func (s *stubResolver) LatestRelease(_ context.Context, repository string) (*Release, error) {
-	s.calls = append(s.calls, repository)
+	s.record(repository)
 	release, ok := s.releases[repository]
 	if !ok {
 		return nil, ErrNoReleases
@@ -30,7 +51,7 @@ func (s *stubResolver) LatestRelease(_ context.Context, repository string) (*Rel
 }
 
 func (s *stubResolver) ResolveVersion(_ context.Context, repository, version string) (*Release, error) {
-	s.calls = append(s.calls, repository+"@"+version)
+	s.record(repository + "@" + version)
 	release, ok := s.versions[repository+"@"+version]
 	if !ok {
 		return nil, ErrNoReleases
@@ -191,8 +212,8 @@ func TestPlanUpgrade(t *testing.T) {
 	// Local and container references must not reach the resolver, and an
 	// upgrade only asks for the latest release of each repository.
 	expectedCalls := []string{"actions/checkout", "actions/setup-go", "unknown/action"}
-	if strings.Join(resolver.calls, ",") != strings.Join(expectedCalls, ",") {
-		t.Errorf("resolver called with %+v, want %+v", resolver.calls, expectedCalls)
+	if got := resolver.lookups(); !reflect.DeepEqual(got, expectedCalls) {
+		t.Errorf("resolver called with %+v, want %+v", got, expectedCalls)
 	}
 }
 
@@ -225,8 +246,8 @@ func TestPlanPinsCurrentVersion(t *testing.T) {
 	}
 
 	expectedCalls := []string{"actions/checkout@v4"}
-	if strings.Join(resolver.calls, ",") != strings.Join(expectedCalls, ",") {
-		t.Errorf("resolver called with %+v, want %+v", resolver.calls, expectedCalls)
+	if got := resolver.lookups(); !reflect.DeepEqual(got, expectedCalls) {
+		t.Errorf("resolver called with %+v, want %+v", got, expectedCalls)
 	}
 }
 

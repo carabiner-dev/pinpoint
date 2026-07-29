@@ -3,7 +3,10 @@
 
 package pinpoint
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 // UpdateStatus is what pinpoint knows about the versions available for an
 // action reference.
@@ -58,21 +61,38 @@ func CheckUpdates(ctx context.Context, resolver Resolver, refs []Reference, opts
 		opt(&options)
 	}
 
-	var latest *Plan
+	// The two passes ask the forge about different things, so they run at
+	// the same time. The resolver caches what they have in common.
+	var (
+		latest, pin       *Plan
+		latestErr, pinErr error
+		wg                sync.WaitGroup
+	)
+
 	if options.latestReleases {
-		plan, err := (&Updater{Resolver: resolver, Upgrade: true}).Plan(ctx, refs)
-		if err != nil {
-			return nil, err
-		}
-		latest = plan
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			latest, latestErr = (&Updater{Resolver: resolver, Upgrade: true}).Plan(ctx, refs)
+		}()
 	}
 
 	// The same references as an updater that is not upgrading sees them.
 	// Entries already pinned are skipped without reaching the forge, so
 	// this only resolves the versions the unpinned ones are using.
-	pin, err := (&Updater{Resolver: resolver}).Plan(ctx, refs)
-	if err != nil {
-		return nil, err
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pin, pinErr = (&Updater{Resolver: resolver}).Plan(ctx, refs)
+	}()
+
+	wg.Wait()
+
+	if latestErr != nil {
+		return nil, latestErr
+	}
+	if pinErr != nil {
+		return nil, pinErr
 	}
 
 	return NewUpdates(latest, pin), nil

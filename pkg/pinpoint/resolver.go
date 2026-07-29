@@ -13,7 +13,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/carabiner-dev/github"
@@ -63,14 +62,15 @@ type apiCaller interface {
 }
 
 // GitHubResolver resolves action versions using the GitHub API. Responses are
-// cached, resolving the same version twice only calls the API once.
+// cached and the lookups are safe to run concurrently: resolving the same
+// version twice only calls the API once, even when both callers ask at the
+// same time.
 type GitHubResolver struct {
 	client apiCaller
 
-	mtx      sync.Mutex
-	releases map[string]*Release
-	tags     map[string][]repositoryTag
-	sources  map[string]string
+	releases memo[*Release]
+	tags     memo[[]repositoryTag]
+	sources  memo[string]
 }
 
 // repositoryTag is a tag as returned by the GitHub API.
@@ -123,12 +123,7 @@ func (r *EnvTokenReader) ReadToken() (string, error) {
 // NewGitHubResolverWithClient creates a resolver using a preconfigured API
 // client.
 func NewGitHubResolverWithClient(client apiCaller) *GitHubResolver {
-	return &GitHubResolver{
-		client:   client,
-		releases: map[string]*Release{},
-		tags:     map[string][]repositoryTag{},
-		sources:  map[string]string{},
-	}
+	return &GitHubResolver{client: client}
 }
 
 // SourceRepository returns the repository a fork was created from, the root
@@ -140,13 +135,13 @@ func (r *GitHubResolver) SourceRepository(ctx context.Context, repository string
 		return "", errors.New("no repository specified")
 	}
 
-	r.mtx.Lock()
-	cached, ok := r.sources[repository]
-	r.mtx.Unlock()
-	if ok {
-		return cached, nil
-	}
+	return r.sources.Do(repository, func() (string, error) {
+		return r.sourceRepository(ctx, repository)
+	})
+}
 
+// sourceRepository asks the API which repository a fork was created from.
+func (r *GitHubResolver) sourceRepository(ctx context.Context, repository string) (string, error) {
 	var repo struct {
 		FullName string `json:"full_name"`
 		Fork     bool   `json:"fork"`
@@ -176,10 +171,6 @@ func (r *GitHubResolver) SourceRepository(ctx context.Context, repository string
 		}
 	}
 
-	r.mtx.Lock()
-	r.sources[repository] = source
-	r.mtx.Unlock()
-
 	return source, nil
 }
 
@@ -190,21 +181,18 @@ func (r *GitHubResolver) LatestRelease(ctx context.Context, repository string) (
 		return nil, errors.New("no repository specified")
 	}
 
-	if cached, ok := r.cached(repository, ""); ok {
-		return cached, nil
-	}
+	return r.releases.Do(repository+"@", func() (*Release, error) {
+		tag, err := r.latestTag(ctx, repository)
+		if err != nil {
+			return nil, err
+		}
 
-	tag, err := r.latestTag(ctx, repository)
-	if err != nil {
-		return nil, err
-	}
-
-	commit, err := r.commitFor(ctx, repository, tag)
-	if err != nil {
-		return nil, err
-	}
-
-	return r.cache(repository, "", &Release{Tag: tag, Commit: commit}), nil
+		commit, err := r.commitFor(ctx, repository, tag)
+		if err != nil {
+			return nil, err
+		}
+		return &Release{Tag: tag, Commit: commit}, nil
+	})
 }
 
 // ResolveVersion returns the commit a tag or branch of a repository points
@@ -216,41 +204,23 @@ func (r *GitHubResolver) ResolveVersion(ctx context.Context, repository, version
 		return nil, errors.New("no repository specified")
 	}
 
-	if cached, ok := r.cached(repository, version); ok {
-		return cached, nil
-	}
+	return r.releases.Do(repository+"@"+version, func() (*Release, error) {
+		// An entry with no version tracks the default branch.
+		ref := version
+		if ref == "" {
+			ref = "HEAD"
+		}
 
-	// An entry with no version tracks the default branch of the repository.
-	ref := version
-	if ref == "" {
-		ref = "HEAD"
-	}
+		commit, err := r.commitFor(ctx, repository, ref)
+		if err != nil {
+			return nil, err
+		}
 
-	commit, err := r.commitFor(ctx, repository, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	return r.cache(repository, version, &Release{
-		Tag:    r.tagFor(ctx, repository, commit, version),
-		Commit: commit,
-	}), nil
-}
-
-// cached returns a previously resolved version of a repository.
-func (r *GitHubResolver) cached(repository, version string) (*Release, bool) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	release, ok := r.releases[repository+"@"+version]
-	return release, ok
-}
-
-// cache stores a resolved version of a repository and returns it.
-func (r *GitHubResolver) cache(repository, version string, release *Release) *Release {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	r.releases[repository+"@"+version] = release
-	return release
+		return &Release{
+			Tag:    r.tagFor(ctx, repository, commit, version),
+			Commit: commit,
+		}, nil
+	})
 }
 
 // latestTag returns the tag of the latest published release of a repository,
@@ -314,23 +284,13 @@ func (r *GitHubResolver) tagFor(ctx context.Context, repository, commit, fallbac
 // repositoryTags returns the tags of a repository, caching the response as
 // pinning a repository commonly needs them more than once.
 func (r *GitHubResolver) repositoryTags(ctx context.Context, repository string) ([]repositoryTag, error) {
-	r.mtx.Lock()
-	cached, ok := r.tags[repository]
-	r.mtx.Unlock()
-	if ok {
-		return cached, nil
-	}
-
-	var tags []repositoryTag
-	if err := r.get(ctx, fmt.Sprintf("repos/%s/tags?per_page=100", repository), &tags); err != nil {
-		return nil, err
-	}
-
-	r.mtx.Lock()
-	r.tags[repository] = tags
-	r.mtx.Unlock()
-
-	return tags, nil
+	return r.tags.Do(repository, func() ([]repositoryTag, error) {
+		var tags []repositoryTag
+		if err := r.get(ctx, fmt.Sprintf("repos/%s/tags?per_page=100", repository), &tags); err != nil {
+			return nil, err
+		}
+		return tags, nil
+	})
 }
 
 // moreSpecific compares two tags naming the same commit. A version with more

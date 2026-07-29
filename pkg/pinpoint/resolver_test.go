@@ -9,18 +9,24 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
 // stubCaller answers API calls from a map of path to response body. Paths
-// with no entry get a 404.
+// with no entry get a 404. Lookups run in parallel, so the call log is
+// guarded.
 type stubCaller struct {
 	responses map[string]string
-	calls     []string
+
+	mtx   sync.Mutex
+	calls []string
 }
 
 func (s *stubCaller) Call(_ context.Context, _, path string, _ io.Reader) (*http.Response, error) {
+	s.mtx.Lock()
 	s.calls = append(s.calls, path)
+	s.mtx.Unlock()
 
 	body, ok := s.responses[path]
 	if !ok {
@@ -35,6 +41,20 @@ func (s *stubCaller) Call(_ context.Context, _, path string, _ io.Reader) (*http
 		Status:     "200 OK",
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}, nil
+}
+
+// callCount returns how many calls the stub has answered.
+func (s *stubCaller) callCount() int {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return len(s.calls)
+}
+
+// callLog returns a copy of the paths the stub was asked for.
+func (s *stubCaller) callLog() []string {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return append([]string(nil), s.calls...)
 }
 
 func TestLatestRelease(t *testing.T) {
@@ -59,12 +79,12 @@ func TestLatestRelease(t *testing.T) {
 	}
 
 	// A second lookup must be served from the cache.
-	calls := len(caller.calls)
+	calls := caller.callCount()
 	if _, err := resolver.LatestRelease(t.Context(), "actions/checkout"); err != nil {
 		t.Fatalf("resolving cached release: %v", err)
 	}
-	if len(caller.calls) != calls {
-		t.Errorf("cached lookup called the API: %+v", caller.calls[calls:])
+	if caller.callCount() != calls {
+		t.Errorf("cached lookup called the API: %+v", caller.callLog()[calls:])
 	}
 
 	// Repositories with no releases fall back to their highest semver tag.
@@ -113,12 +133,12 @@ func TestResolveVersion(t *testing.T) {
 	}
 
 	// A second lookup of the same version is served from the cache.
-	calls := len(caller.calls)
+	calls := caller.callCount()
 	if _, err := resolver.ResolveVersion(t.Context(), "actions/checkout", "v4"); err != nil {
 		t.Fatalf("resolving cached version: %v", err)
 	}
-	if len(caller.calls) != calls {
-		t.Errorf("cached lookup called the API: %+v", caller.calls[calls:])
+	if caller.callCount() != calls {
+		t.Errorf("cached lookup called the API: %+v", caller.callLog()[calls:])
 	}
 
 	// Branches keep their name, no tag points at their commit.
@@ -257,12 +277,12 @@ func TestSourceRepository(t *testing.T) {
 		if _, err := resolver.SourceRepository(t.Context(), "puerco/kubernetes"); err != nil {
 			t.Fatalf("warming the cache: %v", err)
 		}
-		calls := len(caller.calls)
+		calls := caller.callCount()
 		if _, err := resolver.SourceRepository(t.Context(), "puerco/kubernetes"); err != nil {
 			t.Fatalf("resolving cached source: %v", err)
 		}
-		if len(caller.calls) != calls {
-			t.Errorf("cached lookup called the API: %+v", caller.calls[calls:])
+		if caller.callCount() != calls {
+			t.Errorf("cached lookup called the API: %+v", caller.callLog()[calls:])
 		}
 	})
 
