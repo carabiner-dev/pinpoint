@@ -36,7 +36,7 @@ and reports those that have a newer release, so that the output covers
 both halves of keeping actions under control: pinning them and keeping
 them current. Only the unpinned ones fail the command.
 
-Two flags control how much pinpoint asks the forge. With --updates=false
+Two flags control how much pinpoint asks the forge. With --update=false
 it stops reporting the references that have a newer release, but still
 resolves the version each unpinned entry would be pinned to. With
 --offline it makes no calls at all: the scan then only knows which
@@ -90,7 +90,7 @@ to a handful of scans per hour.
 
 			var updates *pinpoint.Updates
 			if resolver != nil {
-				updates, err = checkUpdates(cmd, resolver, report, opts.Updates)
+				updates, err = checkUpdates(cmd, resolver, report, opts.Update)
 				if err != nil {
 					return err
 				}

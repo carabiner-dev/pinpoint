@@ -19,9 +19,9 @@ type Check struct {
 	// attestation instead of the human readable output.
 	Attest bool
 
-	// Updates makes pinpoint look up the latest release of the actions to
+	// Update makes pinpoint look up the latest release of the actions to
 	// report the references that have a newer version available.
-	Updates bool
+	Update bool
 
 	// Offline stops pinpoint from calling the forge at all: no versions
 	// are resolved and no repository is checked for being a fork.
@@ -36,7 +36,7 @@ func (co *Check) AddFlags(cmd *cobra.Command) {
 		"write the results as an (unsigned) in-toto attestation",
 	)
 	cmd.PersistentFlags().BoolVar(
-		&co.Updates, "updates", true,
+		&co.Update, "update", true,
 		"report the references that have a newer release available",
 	)
 	cmd.PersistentFlags().BoolVar(
