@@ -39,12 +39,12 @@ tracking a major version (@v5) is pinned with the patch release it
 resolved to. Any comment already trailing the entry is replaced, it is
 the slot where the version a hash corresponds to is kept by convention.
 
-Using --upgrade, references are pinned to the latest release of each
-action instead of to the version they are using, upgrading them in the
-same pass.
+Using --update, references are pinned to the latest release of each
+action instead of to the version they are using, updating them in the
+same pass. It is the flag that acts on what check reports as updatable.
 
 Using --all, pinpoint looks at every reference instead of only the
-unpinned ones. Combined with --upgrade this moves the whole repository
+unpinned ones. Combined with --update this moves the whole repository
 to the newest releases. The scan is also widened to the action
 definitions (action.yml files) found in the repository, skipping the
 .git, vendor, node_modules and testdata directories.
@@ -90,7 +90,7 @@ to a handful of scans per hour.
 			}
 
 			updater, err := pinpoint.NewUpdater(
-				pinpoint.WithUpgrade(opts.Upgrade),
+				pinpoint.WithUpgrade(opts.Update),
 			)
 			if err != nil {
 				return err

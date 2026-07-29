@@ -20,9 +20,10 @@ type Pin struct {
 	// in the repository.
 	All bool
 
-	// Upgrade makes pinpoint pin the references to the latest release of
-	// each action instead of to the version they already track.
-	Upgrade bool
+	// Update makes pinpoint pin the references to the latest release of
+	// each action instead of to the version they already track. It is the
+	// counterpart of the update reporting of the check subcommand.
+	Update bool
 
 	// Yes writes the changes without asking for confirmation first.
 	Yes bool
@@ -36,7 +37,7 @@ func (po *Pin) AddFlags(cmd *cobra.Command) {
 		"check every action reference, not just the unpinned ones",
 	)
 	cmd.PersistentFlags().BoolVar(
-		&po.Upgrade, "upgrade", false,
+		&po.Update, "update", false,
 		"pin to the latest release of each action instead of to the version in use",
 	)
 	cmd.PersistentFlags().BoolVarP(
