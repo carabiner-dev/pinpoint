@@ -9,6 +9,8 @@ import (
 	"strconv"
 
 	"github.com/carabiner-dev/termtable"
+	"github.com/protobom/protobom/pkg/formats"
+	"github.com/protobom/protobom/pkg/writer"
 	"github.com/spf13/cobra"
 
 	"github.com/carabiner-dev/pinpoint/options"
@@ -39,6 +41,15 @@ container images among them, show a question mark in the update column.
 With --offline pinpoint makes no calls to the forge: the update column
 is dropped and the scan only reports which references are pinned.
 
+Using --format, the results are written as an SBOM instead of the
+table: --format=spdx renders SPDX 2.3 and --format=cyclonedx renders
+CycloneDX 1.7, both as JSON on standard output. The document models the
+repository at its current commit with each action version as a package
+hanging from it, connected to the workflow files that use it. Actions
+whose pinned hash matches a tagged release carry the tag as their
+version; every reference is verified against the forge, so SBOM runs
+need API access and cannot be combined with --offline.
+
 Status is a report, not a gate: the command exits cleanly whatever it
 finds. Use check to fail a run over unpinned references.
 
@@ -62,6 +73,10 @@ to a handful of scans per hour.
 			).Scan(opts.Path)
 			if err != nil {
 				return err
+			}
+
+			if opts.Format != "" {
+				return writeSBOM(cmd, opts, report)
 			}
 
 			refs := external(report.References)
@@ -89,6 +104,32 @@ to a handful of scans per hour.
 	}
 	opts.AddFlags(statusCmd)
 	parent.AddCommand(statusCmd)
+}
+
+// sbomFormats maps the format flag values to the serializations pinpoint
+// writes: the most current versions protobom can render.
+var sbomFormats = map[string]formats.Format{
+	options.FormatSPDX:      formats.SPDX23JSON,
+	options.FormatCycloneDX: formats.CDX17JSON,
+}
+
+// writeSBOM renders the scan results as an SBOM on standard output. The
+// versions in the document are verified against the forge, so unlike the
+// table a resolver is required.
+func writeSBOM(cmd *cobra.Command, opts *options.Status, report *pinpoint.Report) error {
+	resolver, err := pinpoint.NewGitHubResolver()
+	if err != nil {
+		return err
+	}
+
+	doc, err := pinpoint.BuildSBOM(cmd.Context(), resolver, opts.Path, report.References)
+	if err != nil {
+		return err
+	}
+
+	return writer.New().WriteStreamWithOptions(
+		doc, cmd.OutOrStdout(), &writer.Options{Format: sbomFormats[opts.Format]},
+	)
 }
 
 // external returns the references that point outside the repository: actions
