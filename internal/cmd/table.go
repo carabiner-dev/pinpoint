@@ -53,9 +53,9 @@ func printTable(w io.Writer, t *termtable.Table) error {
 	return nil
 }
 
-// styleFileColumn configures the column holding the path of the workflow or
-// action definition. Paths that overflow are trimmed from the left as the
-// tail (the file name) is the part that identifies them.
-func styleFileColumn(t *termtable.Table, index int) {
-	t.Column(index).Style("white-space: nowrap; text-overflow-position: start; flex: 2")
+// styleFileColumn configures the first column, the one holding the path of
+// the workflow or action definition. Paths that overflow are trimmed from the
+// left as the tail (the file name) is the part that identifies them.
+func styleFileColumn(t *termtable.Table) {
+	t.Column(0).Style("white-space: nowrap; text-overflow-position: start; flex: 2")
 }

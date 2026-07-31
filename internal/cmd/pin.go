@@ -210,7 +210,7 @@ func writeUpdatesTable(w io.Writer, updates []pinpoint.Update) error {
 	t := newTable()
 	addHeader(t, "File", "Line", "Action", "Pin to")
 
-	styleFileColumn(t, 0)
+	styleFileColumn(t)
 	t.Column(1).SetAlign(termtable.AlignRight)
 	t.Column(2).Style("white-space: nowrap; flex: 3")
 	t.Column(3).Style("white-space: nowrap")

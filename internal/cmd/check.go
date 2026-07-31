@@ -268,7 +268,7 @@ func writeTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Update
 	// Keep every finding on a single line, trimming the ones that overflow.
 	// The versions column is only created when we have versions to show,
 	// asking for it would add an empty column to the table.
-	styleFileColumn(t, 0)
+	styleFileColumn(t)
 	t.Column(1).SetAlign(termtable.AlignRight)
 	t.Column(2).Style("white-space: nowrap")
 	t.Column(3).Style("white-space: nowrap; flex: 3")
@@ -379,7 +379,7 @@ func writeOutdatedTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoin
 	t := newTable()
 	addHeader(t, "Workflow", "Lines", "Action", "Using", "Latest")
 
-	styleFileColumn(t, 0)
+	styleFileColumn(t)
 	// The lines are the one column allowed to wrap: a long list is better
 	// read on two lines than trimmed away.
 	t.Column(1).SetAlign(termtable.AlignRight)
