@@ -8,8 +8,70 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/carabiner-dev/pinpoint/pkg/pinpoint"
 )
+
+// TestStatusFormatFlag runs the command end to end to check how the format
+// flag is validated and dispatched. The cases run in directories that are
+// neither repositories nor hold workflows, no output needs the forge.
+func TestStatusFormatFlag(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		output  string
+		errText string
+	}{
+		// No format renders the table output.
+		{
+			name: "table by default", args: []string{"--offline"},
+			output: "No external action references found.",
+		},
+		{
+			name: "unknown format", args: []string{"--format=xml"},
+			errText: "unknown SBOM format",
+		},
+		// The SBOM carries verified versions, there is no offline export.
+		{
+			name: "format needs the forge", args: []string{"--format=spdx", "--offline"},
+			errText: "cannot be combined with --offline",
+		},
+		// An SBOM describes the repository at a commit, so a directory that
+		// is not a repository has nothing to export.
+		{
+			name: "sbom needs a repository", args: []string{"--format=cyclonedx"},
+			errText: "describes the repository at a commit",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			parent := &cobra.Command{}
+			addStatus(parent)
+
+			var out bytes.Buffer
+			parent.SetOut(&out)
+			parent.SetErr(&out)
+			parent.SetArgs(append([]string{"status", t.TempDir()}, tc.args...))
+
+			err := parent.Execute()
+			if tc.errText != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.errText) {
+					t.Fatalf("expected an error mentioning %q, got %v", tc.errText, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("status: %v", err)
+			}
+			if !strings.Contains(out.String(), tc.output) {
+				t.Errorf("output %q does not contain %q", out.String(), tc.output)
+			}
+		})
+	}
+}
 
 func TestExternal(t *testing.T) {
 	t.Parallel()
