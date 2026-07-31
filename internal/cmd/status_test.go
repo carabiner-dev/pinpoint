@@ -40,7 +40,7 @@ func TestWriteStatusTable(t *testing.T) {
 
 	refs := []pinpoint.Reference{
 		{Workflow: "ci.yaml", Uses: checkout, Kind: pinpoint.KindAction, Line: 4},
-		{Workflow: "ci.yaml", Uses: setupGo, Kind: pinpoint.KindAction, Line: 5},
+		{Workflow: "ci.yaml", Uses: setupGo, Comment: "v5.5.0", Kind: pinpoint.KindAction, Line: 5},
 		{Workflow: "ci.yaml", Uses: "actions/cache@v4", Kind: pinpoint.KindAction, Line: 6},
 		{Workflow: "ci.yaml", Uses: "docker://alpine:3.22", Kind: pinpoint.KindContainer, Line: 7},
 	}
@@ -71,21 +71,27 @@ func TestWriteStatusTable(t *testing.T) {
 	}
 
 	for _, expected := range []struct {
-		action string
-		ticks  int
-		cross  int
-		marks  int
+		action  string
+		version string
+		ticks   int
+		cross   int
+		marks   int
 	}{
-		// Pinned to the commit of the latest release: two ticks.
-		{action: "actions/checkout@", ticks: 2},
-		// Pinned, but a newer release exists.
-		{action: "actions/setup-go@", ticks: 1, cross: 1},
+		// Pinned to the commit of the latest release: two ticks. With no
+		// comment naming the version, the hash is previewed instead.
+		{action: "actions/checkout@", version: "11bd719…", ticks: 2},
+		// Pinned, but a newer release exists. The version is the one the
+		// comment trailing the hash names.
+		{action: "actions/setup-go@", version: "v5.5.0", ticks: 1, cross: 1},
 		// Not pinned and not on the latest release.
-		{action: "actions/cache@", cross: 2},
-		// Containers are not resolved, their update status is unknown.
-		{action: "docker://alpine", cross: 1, marks: 1},
+		{action: "actions/cache@", version: "v4", cross: 2},
+		// Containers are not resolved: no version and no update status.
+		{action: "docker://alpine", cross: 1, marks: 2},
 	} {
 		row := findRow(t, out.String(), expected.action)
+		if expected.version != "" && !strings.Contains(row, expected.version) {
+			t.Errorf("row %q does not show version %q", row, expected.version)
+		}
 		if got := strings.Count(row, "✓"); got != expected.ticks {
 			t.Errorf("row %q has %d tick(s), want %d", row, got, expected.ticks)
 		}
@@ -114,6 +120,9 @@ func TestWriteStatusTableOffline(t *testing.T) {
 
 	if !strings.Contains(out.String(), "Pinned") {
 		t.Errorf("output has no Pinned column:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Version") {
+		t.Errorf("output has no Version column:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "Up to date") {
 		t.Errorf("output has an update column with no version data:\n%s", out.String())

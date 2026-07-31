@@ -29,11 +29,12 @@ default) and lists every external action reference: those pointing at
 other repositories or at container images. Local actions ride along the
 repository and have nothing to pin, so they are left out.
 
-Each reference is shown with two marks: whether it is pinned to an
-immutable version (a commit hash, or an image digest for container
-actions) and whether it is using the latest release of its action.
-References pinpoint cannot look up, container images among them, show
-a question mark in the update column.
+Each reference is shown with the version it is using (for pinned
+entries, the version named by the comment trailing the hash) and two
+marks: whether it is pinned to an immutable version (a commit hash, or
+an image digest for container actions) and whether it is using the
+latest release of its action. References pinpoint cannot look up,
+container images among them, show a question mark in the update column.
 
 With --offline pinpoint makes no calls to the forge: the update column
 is dropped and the scan only reports which references are pinned.
@@ -130,7 +131,7 @@ func updateMark(ref *pinpoint.Reference, updates *pinpoint.Updates) []termtable.
 func writeStatusTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.Updates) error {
 	withUpdates := updates.LatestChecked()
 
-	titles := []string{"Workflow", "Line", "Action", "Pinned"}
+	titles := []string{"Workflow", "Line", "Action", "Version", "Pinned"}
 	if withUpdates {
 		titles = append(titles, "Up to date")
 	}
@@ -143,20 +144,25 @@ func writeStatusTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.
 	styleFileColumn(t)
 	t.Column(1).SetAlign(termtable.AlignRight)
 	t.Column(2).Style("white-space: nowrap; flex: 3")
-	t.Column(3).SetAlign(termtable.AlignCenter)
+	t.Column(3).Style("white-space: nowrap")
+	t.Column(4).SetAlign(termtable.AlignCenter)
 	if withUpdates {
-		t.Column(4).SetAlign(termtable.AlignCenter)
+		t.Column(5).SetAlign(termtable.AlignCenter)
 	}
 
 	lines := make([]string, 0, len(refs))
+	versions := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		line := strconv.Itoa(ref.Line)
+		version := pinnedVersion(&ref)
 		lines = append(lines, line)
+		versions = append(versions, version)
 
 		row := t.AddRow()
 		row.AddCell(termtable.WithContent(ref.Workflow))
 		row.AddCell(termtable.WithContent(line))
 		row.AddCell(termtable.WithContent(ref.Uses))
+		row.AddCell(termtable.WithContent(version))
 		row.AddCell(mark(ref.IsPinned())...)
 		if withUpdates {
 			row.AddCell(updateMark(&ref, updates)...)
@@ -164,9 +170,10 @@ func writeStatusTable(w io.Writer, refs []pinpoint.Reference, updates *pinpoint.
 	}
 
 	t.Column(1).SetWidth(narrowWidth("Line", lines...))
-	t.Column(3).SetWidth(narrowWidth("Pinned"))
+	t.Column(3).SetWidth(narrowWidth("Version", versions...))
+	t.Column(4).SetWidth(narrowWidth("Pinned"))
 	if withUpdates {
-		t.Column(4).SetWidth(narrowWidth("Up to date"))
+		t.Column(5).SetWidth(narrowWidth("Up to date"))
 	}
 
 	return printTable(w, t)
