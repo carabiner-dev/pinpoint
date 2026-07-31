@@ -190,6 +190,43 @@ func TestBuildSBOM(t *testing.T) {
 	}
 }
 
+// TestBuildSBOMWithoutWorkflowFiles checks that the graph stops at the
+// action nodes when the file level is turned off.
+func TestBuildSBOMWithoutWorkflowFiles(t *testing.T) {
+	t.Parallel()
+
+	checkoutHash := "11bd71901bbe5b1630ceea73d27597364c9af683"
+	dir, _ := testRepository(t, map[string]string{
+		".github/workflows/ci.yaml": "name: ci\non: push\njobs:\n  build:\n    steps:\n" +
+			"      - uses: actions/checkout@" + checkoutHash + "\n",
+	})
+
+	resolver := &stubResolver{versions: map[string]Release{
+		"actions/checkout@" + checkoutHash: {Tag: "v5.0.0", Commit: checkoutHash},
+	}}
+
+	doc, err := BuildSBOM(t.Context(), resolver, dir, WithWorkflowFiles(false))
+	if err != nil {
+		t.Fatalf("BuildSBOM(): %v", err)
+	}
+
+	for _, node := range doc.NodeList.Nodes {
+		if node.Type == sbom.Node_FILE {
+			t.Errorf("the graph carries the file node %q", node.Name)
+		}
+	}
+	for _, edge := range doc.NodeList.Edges {
+		if edge.Type == sbom.Edge_contained_by {
+			t.Errorf("the graph carries a contained_by edge: %+v", edge)
+		}
+	}
+
+	actions := doc.NodeList.GetNodesByName("actions/checkout")
+	if len(actions) != 1 || actions[0].Version != "v5.0.0" {
+		t.Fatalf("expected the checkout action node, got %+v", actions)
+	}
+}
+
 // TestBuildSBOMResolutionFails checks that an SBOM is not emitted when a
 // version cannot be verified.
 func TestBuildSBOMResolutionFails(t *testing.T) {

@@ -24,6 +24,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// sbomOptions configures how an SBOM graph is built.
+type sbomOptions struct {
+	workflowFiles bool
+}
+
+// SBOMOption configures how BuildSBOM models the graph.
+type SBOMOption func(*sbomOptions)
+
+// WithWorkflowFiles controls whether the workflow files defining the
+// references are added to the graph as the containers of the actions.
+// Turning them off stops the graph at the action nodes.
+func WithWorkflowFiles(files bool) SBOMOption {
+	return func(o *sbomOptions) {
+		o.workflowFiles = files
+	}
+}
+
 // BuildSBOM scans the GitHub Actions workflows and action definitions found
 // under path and models the external action references of the repository as
 // a protobom document. The graph has the repository commit at the root, each
@@ -32,13 +49,21 @@ import (
 //
 //	commit --devTool--> action --contained_by--> workflow file
 //
+// The file level can be turned off with WithWorkflowFiles(false), leaving
+// only the commit and the actions.
+//
 // The resolver names the version each reference is using: the tag its commit
 // corresponds to for pinned entries, the release its version resolves to for
 // the rest. Lookups are required, a reference that cannot be resolved fails
 // the build so that an emitted SBOM always carries verified versions.
-func BuildSBOM(ctx context.Context, resolver Resolver, path string) (*sbom.Document, error) {
+func BuildSBOM(ctx context.Context, resolver Resolver, path string, opts ...SBOMOption) (*sbom.Document, error) {
 	if resolver == nil {
 		return nil, errors.New("building an SBOM requires a resolver")
+	}
+
+	options := sbomOptions{workflowFiles: true}
+	for _, opt := range opts {
+		opt(&options)
 	}
 
 	repo, err := describeRepository(path)
@@ -68,6 +93,9 @@ func BuildSBOM(ctx context.Context, resolver Resolver, path string) (*sbom.Docum
 			return nil, fmt.Errorf("adding action node: %w", err)
 		}
 
+		if !options.workflowFiles {
+			continue
+		}
 		for _, workflow := range group.workflows {
 			file, ok := files[workflow]
 			if !ok {
