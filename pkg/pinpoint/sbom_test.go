@@ -17,9 +17,9 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 )
 
-// testRepository builds a git repository holding a workflow file, tagged at
-// its single commit and with a GitHub origin remote.
-func testRepository(t *testing.T) (dir, commit string) {
+// testRepository builds a git repository holding the received files, tagged
+// at its single commit and with a GitHub origin remote.
+func testRepository(t *testing.T, files map[string]string) (dir, commit string) {
 	t.Helper()
 	dir = t.TempDir()
 
@@ -28,13 +28,13 @@ func testRepository(t *testing.T) (dir, commit string) {
 		t.Fatalf("creating test repository: %v", err)
 	}
 
-	workflows := filepath.Join(dir, ".github", "workflows")
-	if err := os.MkdirAll(workflows, 0o750); err != nil {
-		t.Fatalf("creating workflows directory: %v", err)
-	}
-	for _, name := range []string{"ci.yaml", "release.yaml"} {
-		if err := os.WriteFile(filepath.Join(workflows, name), []byte("name: "+name+"\n"), 0o600); err != nil {
-			t.Fatalf("writing workflow: %v", err)
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("creating directory: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("writing file: %v", err)
 		}
 	}
 
@@ -70,25 +70,22 @@ func TestBuildSBOM(t *testing.T) {
 
 	checkoutHash := "11bd71901bbe5b1630ceea73d27597364c9af683"
 	untaggedHash := "d35c59abb061a4a6fb18e82ac0862c26744d6ab5"
-	checkout := "actions/checkout@" + checkoutHash
-	untagged := "actions/setup-go@" + untaggedHash
 
-	dir, commit := testRepository(t)
-	ci := filepath.Join(".github", "workflows", "ci.yaml")
-	release := filepath.Join(".github", "workflows", "release.yaml")
+	ci := "name: ci\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n" +
+		"      - uses: actions/checkout@" + checkoutHash + "\n" +
+		"      - uses: actions/cache@v4\n" +
+		"      - uses: docker://ghcr.io/org/tool:1.2\n" +
+		"      - uses: ./.github/actions/build\n"
+	// The setup-go pin names no tag: the resolver answers with the hash it
+	// received. Checkout appears in a second file: one node, two containers.
+	release := "name: release\non: push\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n" +
+		"      - uses: actions/setup-go@" + untaggedHash + "\n" +
+		"      - uses: actions/checkout@" + checkoutHash + "\n"
 
-	refs := []Reference{
-		{Workflow: ci, Uses: checkout, Kind: KindAction, Line: 4},
-		{Workflow: ci, Uses: "actions/cache@v4", Kind: KindAction, Line: 5},
-		{Workflow: ci, Uses: "docker://ghcr.io/org/tool:1.2", Kind: KindContainer, Line: 6},
-		{Workflow: ci, Uses: "./.github/actions/build", Kind: KindLocal, Line: 7},
-		// The version of this pin names no tag: the resolver answers with
-		// the hash it received.
-		{Workflow: release, Uses: untagged, Kind: KindAction, Line: 4},
-		// The same action version in a second file is one node contained
-		// by both files.
-		{Workflow: release, Uses: checkout, Kind: KindAction, Line: 5},
-	}
+	dir, commit := testRepository(t, map[string]string{
+		".github/workflows/ci.yaml":      ci,
+		".github/workflows/release.yaml": release,
+	})
 
 	resolver := &stubResolver{versions: map[string]Release{
 		"actions/checkout@" + checkoutHash: {Tag: "v5.0.0", Commit: checkoutHash},
@@ -96,7 +93,7 @@ func TestBuildSBOM(t *testing.T) {
 		"actions/setup-go@" + untaggedHash: {Tag: untaggedHash, Commit: untaggedHash},
 	}}
 
-	doc, err := BuildSBOM(t.Context(), resolver, dir, refs)
+	doc, err := BuildSBOM(t.Context(), resolver, dir)
 	if err != nil {
 		t.Fatalf("BuildSBOM(): %v", err)
 	}
@@ -184,7 +181,7 @@ func TestBuildSBOM(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("expected one node for the ci workflow, got %d", len(files))
 	}
-	sum := sha256.Sum256([]byte("name: ci.yaml\n"))
+	sum := sha256.Sum256([]byte(ci))
 	if hash := files[0].Hashes[int32(sbom.HashAlgorithm_SHA256)]; hash != hex.EncodeToString(sum[:]) {
 		t.Errorf("ci workflow sha256 = %q, want %q", hash, hex.EncodeToString(sum[:]))
 	}
@@ -197,13 +194,12 @@ func TestBuildSBOM(t *testing.T) {
 // version cannot be verified.
 func TestBuildSBOMResolutionFails(t *testing.T) {
 	t.Parallel()
-	dir, _ := testRepository(t)
+	dir, _ := testRepository(t, map[string]string{
+		".github/workflows/ci.yaml": "name: ci\non: push\njobs:\n  build:\n    steps:\n" +
+			"      - uses: actions/checkout@v5\n",
+	})
 
-	refs := []Reference{
-		{Workflow: "ci.yaml", Uses: "actions/checkout@v5", Kind: KindAction, Line: 4},
-	}
-
-	if _, err := BuildSBOM(t.Context(), &stubResolver{}, dir, refs); err == nil {
+	if _, err := BuildSBOM(t.Context(), &stubResolver{}, dir); err == nil {
 		t.Fatal("expected an error from the unresolvable reference")
 	}
 }
@@ -212,7 +208,7 @@ func TestBuildSBOMResolutionFails(t *testing.T) {
 // a git repository refuses to build.
 func TestBuildSBOMNeedsRepository(t *testing.T) {
 	t.Parallel()
-	if _, err := BuildSBOM(t.Context(), &stubResolver{}, t.TempDir(), nil); err == nil {
+	if _, err := BuildSBOM(t.Context(), &stubResolver{}, t.TempDir()); err == nil {
 		t.Fatal("expected an error outside a repository")
 	}
 }

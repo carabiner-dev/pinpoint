@@ -80,6 +80,17 @@ func (r *Reference) Version() string {
 	return version
 }
 
+// VersionInUse returns the version a reference is using as it is best known:
+// the comment trailing the entry when there is one (the slot where the
+// version of a pinned hash is kept by convention), the version fragment of
+// the entry otherwise.
+func (r *Reference) VersionInUse() string {
+	if r.Comment != "" {
+		return r.Comment
+	}
+	return r.Version()
+}
+
 // Repository returns the owner/name of the repository hosting the referenced
 // action or workflow. It returns an empty string for references that don't
 // live in a repository (local and container actions).

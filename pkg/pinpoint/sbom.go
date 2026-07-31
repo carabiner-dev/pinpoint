@@ -24,9 +24,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// BuildSBOM models the external action references of the repository at path
-// as a protobom document. The graph has the repository commit at the root,
-// each distinct action version hanging from it as a development tool, and the
+// BuildSBOM scans the GitHub Actions workflows and action definitions found
+// under path and models the external action references of the repository as
+// a protobom document. The graph has the repository commit at the root, each
+// distinct action version hanging from it as a development tool, and the
 // workflow files defining the references as the containers of the actions:
 //
 //	commit --devTool--> action --contained_by--> workflow file
@@ -35,7 +36,7 @@ import (
 // corresponds to for pinned entries, the release its version resolves to for
 // the rest. Lookups are required, a reference that cannot be resolved fails
 // the build so that an emitted SBOM always carries verified versions.
-func BuildSBOM(ctx context.Context, resolver Resolver, path string, refs []Reference) (*sbom.Document, error) {
+func BuildSBOM(ctx context.Context, resolver Resolver, path string) (*sbom.Document, error) {
 	if resolver == nil {
 		return nil, errors.New("building an SBOM requires a resolver")
 	}
@@ -45,7 +46,12 @@ func BuildSBOM(ctx context.Context, resolver Resolver, path string, refs []Refer
 		return nil, err
 	}
 
-	external := groupReferences(refs)
+	report, err := NewScanner(WithActions(true)).Scan(path)
+	if err != nil {
+		return nil, err
+	}
+
+	external := groupReferences(report.References)
 	releases, err := resolveReleases(ctx, resolver, external)
 	if err != nil {
 		return nil, err

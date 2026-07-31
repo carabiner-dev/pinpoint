@@ -4,6 +4,13 @@
 // Package pinpoint scans repositories for GitHub Actions workflows and
 // collects the action references used in them to check they are pinned
 // to commit hashes.
+//
+// Tools embedding pinpoint get the same views its command line renders:
+// ScanStatus describes the pinning state of every external action reference
+// of a repository and BuildSBOM models the repository, its actions and its
+// workflow files as a protobom graph. The lower level pieces are available
+// too: Scanner collects the references, CheckUpdates looks up the versions
+// available for them and Updater pins them in place.
 package pinpoint
 
 import (

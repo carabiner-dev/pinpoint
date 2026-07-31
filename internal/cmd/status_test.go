@@ -73,62 +73,35 @@ func TestStatusFormatFlag(t *testing.T) {
 	}
 }
 
-func TestExternal(t *testing.T) {
-	t.Parallel()
-
-	refs := []pinpoint.Reference{
-		{Uses: "actions/checkout@v5", Kind: pinpoint.KindAction},
-		{Uses: "./.github/actions/build", Kind: pinpoint.KindLocal},
-		{Uses: "docker://alpine:3.22", Kind: pinpoint.KindContainer},
-		{Uses: "org/repo/.github/workflows/ci.yml@v1", Kind: pinpoint.KindReusableWorkflow},
-	}
-
-	got := external(refs)
-	if len(got) != 3 {
-		t.Fatalf("external() kept %d references, want 3: %+v", len(got), got)
-	}
-	for _, ref := range got {
-		if ref.Kind == pinpoint.KindLocal {
-			t.Errorf("external() kept the local reference %q", ref.Uses)
-		}
-	}
-}
-
 func TestWriteStatusTable(t *testing.T) {
 	t.Parallel()
 
 	checkout := "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
 	setupGo := "actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5"
 
-	refs := []pinpoint.Reference{
-		{Workflow: "ci.yaml", Uses: checkout, Kind: pinpoint.KindAction, Line: 4},
-		{Workflow: "ci.yaml", Uses: setupGo, Comment: "v5.5.0", Kind: pinpoint.KindAction, Line: 5},
-		{Workflow: "ci.yaml", Uses: "actions/cache@v4", Kind: pinpoint.KindAction, Line: 6},
-		{Workflow: "ci.yaml", Uses: "docker://alpine:3.22", Kind: pinpoint.KindContainer, Line: 7},
+	status := &pinpoint.Status{
+		Checked: true,
+		References: []pinpoint.ReferenceStatus{
+			{
+				Reference: pinpoint.Reference{Workflow: "ci.yaml", Uses: checkout, Line: 4},
+				Pinned:    true, Checked: true,
+			},
+			{
+				Reference: pinpoint.Reference{Workflow: "ci.yaml", Uses: setupGo, Comment: "v5.5.0", Line: 5},
+				Pinned:    true, Checked: true, Outdated: true,
+			},
+			{
+				Reference: pinpoint.Reference{Workflow: "ci.yaml", Uses: "actions/cache@v4", Line: 6},
+				Checked:   true, Outdated: true,
+			},
+			{
+				Reference: pinpoint.Reference{Workflow: "ci.yaml", Uses: "docker://alpine:3.22", Line: 7},
+			},
+		},
 	}
 
-	updates := pinpoint.NewUpdates(&pinpoint.Plan{
-		Updates: []pinpoint.Update{
-			{
-				Reference: pinpoint.Reference{Uses: setupGo},
-				Release:   pinpoint.Release{Tag: "v6.0.0", Commit: "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"},
-			},
-			{
-				Reference: pinpoint.Reference{Uses: "actions/cache@v4"},
-				Release:   pinpoint.Release{Tag: "v4.4.0", Commit: "3d3c42e5aac5ba805825da76410c181273ba90b1"},
-			},
-		},
-		Skipped: []pinpoint.Skip{
-			{
-				Reference: pinpoint.Reference{Uses: checkout},
-				Reason:    pinpoint.SkipUpToDate,
-				Release:   &pinpoint.Release{Tag: "v5.0.0", Commit: "11bd71901bbe5b1630ceea73d27597364c9af683"},
-			},
-		},
-	}, nil)
-
 	var out bytes.Buffer
-	if err := writeStatusTable(&out, refs, updates); err != nil {
+	if err := writeStatusTable(&out, status); err != nil {
 		t.Fatalf("writeStatusTable(): %v", err)
 	}
 
@@ -171,12 +144,14 @@ func TestWriteStatusTable(t *testing.T) {
 func TestWriteStatusTableOffline(t *testing.T) {
 	t.Parallel()
 
-	refs := []pinpoint.Reference{
-		{Workflow: "ci.yaml", Uses: "actions/checkout@v5", Kind: pinpoint.KindAction, Line: 4},
+	status := &pinpoint.Status{
+		References: []pinpoint.ReferenceStatus{
+			{Reference: pinpoint.Reference{Workflow: "ci.yaml", Uses: "actions/checkout@v5", Line: 4}},
+		},
 	}
 
 	var out bytes.Buffer
-	if err := writeStatusTable(&out, refs, nil); err != nil {
+	if err := writeStatusTable(&out, status); err != nil {
 		t.Fatalf("writeStatusTable(): %v", err)
 	}
 
