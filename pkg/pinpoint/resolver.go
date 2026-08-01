@@ -86,17 +86,44 @@ type repositoryTag struct {
 // the one the gh CLI uses.
 var tokenEnvVars = []string{"GITHUB_TOKEN", "GH_TOKEN"}
 
+// GitHubResolverOption configures a resolver created by NewGitHubResolver.
+type GitHubResolverOption func(*githubResolverOptions)
+
+// githubResolverOptions collects the settings of NewGitHubResolver.
+type githubResolverOptions struct {
+	token string
+}
+
+// WithToken makes the resolver authenticate its API calls with token instead
+// of reading one from the environment. An empty token keeps the environment
+// lookup, so callers can pass along whatever they were configured with.
+func WithToken(token string) GitHubResolverOption {
+	return func(options *githubResolverOptions) {
+		options.token = token
+	}
+}
+
 // NewGitHubResolver creates a resolver that talks to the GitHub API through
 // the carabiner GitHub client. The token is read from the GITHUB_TOKEN or
-// GH_TOKEN environment variables; calls are made anonymously when neither is
-// set, which works for public repositories but gets rate limited quickly.
-// Callers that hold a token some other way can configure a client themselves
-// and hand it to NewGitHubResolverWithClient.
-func NewGitHubResolver() (*GitHubResolver, error) {
-	client, err := github.NewClientWithOptions(github.Options{
-		Host:        github.DefaultAPIHostname,
-		TokenReader: &EnvTokenReader{VarNames: tokenEnvVars},
-	})
+// GH_TOKEN environment variables, unless one is passed with WithToken, which
+// wins over the environment; calls are made anonymously when no token is set
+// anywhere, which works for public repositories but gets rate limited
+// quickly. Callers that hold a client configured some other way can hand it
+// to NewGitHubResolverWithClient.
+func NewGitHubResolver(opts ...GitHubResolverOption) (*GitHubResolver, error) {
+	options := githubResolverOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	clientOptions := github.Options{Host: github.DefaultAPIHostname}
+	if options.token != "" {
+		clientOptions.Token = options.token
+	} else {
+		clientOptions.TokenReader = &EnvTokenReader{VarNames: tokenEnvVars}
+	}
+
+	client, err := github.NewClientWithOptions(clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating GitHub client: %w", err)
 	}

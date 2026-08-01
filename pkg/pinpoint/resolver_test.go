@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/carabiner-dev/github"
 )
 
 // stubCaller answers API calls from a map of path to response body. Paths
@@ -226,6 +228,51 @@ func TestNewGitHubResolver(t *testing.T) {
 		if resolver == nil {
 			t.Fatal("creating resolver returned nothing")
 		}
+	}
+}
+
+func TestNewGitHubResolverToken(t *testing.T) {
+	// Not parallel, the subtests set the environment tokens.
+	for _, tc := range []struct {
+		name     string
+		env      string
+		options  []GitHubResolverOption
+		expected string
+	}{
+		{
+			name:     "the option sets the token",
+			options:  []GitHubResolverOption{WithToken("secret")},
+			expected: "secret",
+		},
+		{
+			name:     "the environment token still works",
+			env:      "from-env",
+			expected: "from-env",
+		},
+		{
+			name:     "the option wins over the environment",
+			env:      "from-env",
+			options:  []GitHubResolverOption{WithToken("secret")},
+			expected: "secret",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GITHUB_TOKEN", tc.env)
+			t.Setenv("GH_TOKEN", "")
+
+			resolver, err := NewGitHubResolver(tc.options...)
+			if err != nil {
+				t.Fatalf("creating resolver: %v", err)
+			}
+
+			client, ok := resolver.client.(*github.Client)
+			if !ok {
+				t.Fatalf("client is a %T, want a *github.Client", resolver.client)
+			}
+			if client.Options.Token != tc.expected {
+				t.Errorf("token = %q, want %q", client.Options.Token, tc.expected)
+			}
+		})
 	}
 }
 
