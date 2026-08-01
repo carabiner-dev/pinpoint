@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"testing"
 
 	gointoto "github.com/in-toto/attestation/go/v1"
@@ -87,6 +88,69 @@ func TestPredicateTool(t *testing.T) {
 	version := descriptor.GetAnnotations().GetFields()["version"].GetStringValue()
 	if version != toolVersion() {
 		t.Errorf("tool version = %q, want %q", version, toolVersion())
+	}
+}
+
+// TestVersionFromBuildInfo checks that the version reported for the tool is
+// pinpoint's own, whether pinpoint is the main module of the binary or a
+// library linked into another one.
+func TestVersionFromBuildInfo(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		info    *debug.BuildInfo
+		version string
+	}{
+		{
+			name:    "pinpoint is the main module",
+			info:    &debug.BuildInfo{Main: debug.Module{Path: pinpointModule, Version: "v1.2.3"}},
+			version: "v1.2.3",
+		},
+		{
+			name: "pinpoint is a dependency",
+			info: &debug.BuildInfo{
+				Main: debug.Module{Path: "example.com/consumer", Version: "v9.9.9"},
+				Deps: []*debug.Module{
+					{Path: "example.com/other", Version: "v0.1.0"},
+					{Path: pinpointModule, Version: "v1.2.3"},
+				},
+			},
+			version: "v1.2.3",
+		},
+		{
+			name: "pinpoint is a replaced dependency",
+			info: &debug.BuildInfo{
+				Main: debug.Module{Path: "example.com/consumer", Version: "v9.9.9"},
+				Deps: []*debug.Module{
+					{
+						Path:    pinpointModule,
+						Version: "v1.2.3",
+						Replace: &debug.Module{Path: pinpointModule, Version: "v1.2.4"},
+					},
+				},
+			},
+			version: "v1.2.4",
+		},
+		{
+			name:    "pinpoint is nowhere in the build",
+			info:    &debug.BuildInfo{Main: debug.Module{Path: "example.com/consumer", Version: "v9.9.9"}},
+			version: "unknown",
+		},
+		{
+			name: "dependency without a version",
+			info: &debug.BuildInfo{
+				Main: debug.Module{Path: "example.com/consumer", Version: "v9.9.9"},
+				Deps: []*debug.Module{{Path: pinpointModule}},
+			},
+			version: "unknown",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := versionFromBuildInfo(tc.info); got != tc.version {
+				t.Errorf("versionFromBuildInfo() = %q, want %q", got, tc.version)
+			}
+		})
 	}
 }
 

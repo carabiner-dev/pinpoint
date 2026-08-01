@@ -217,12 +217,41 @@ func (r *Report) Predicate(updates *Updates) *Predicate {
 	return p
 }
 
+// pinpointModule is the path of this module as the go tooling records it in
+// the build info of any binary that links pinpoint in.
+const pinpointModule = "github.com/carabiner-dev/pinpoint"
+
 // toolVersion returns the version of the pinpoint build generating the
 // attestation, as recorded by the go tooling.
 func toolVersion() string {
 	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" {
+	if !ok {
 		return "unknown"
 	}
-	return info.Main.Version
+	return versionFromBuildInfo(info)
+}
+
+// versionFromBuildInfo digs the pinpoint version out of the build info. When
+// pinpoint is linked into another binary as a library the main module is the
+// consumer's, so its version must not be reported as pinpoint's: the
+// dependency list is checked first, and the main module version only counts
+// when pinpoint itself is the main module, as in the CLI.
+func versionFromBuildInfo(info *debug.BuildInfo) string {
+	for _, dep := range info.Deps {
+		if dep.Path != pinpointModule {
+			continue
+		}
+		// A replace directive supersedes the required version, the
+		// replacement is what actually got linked in.
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			return dep.Replace.Version
+		}
+		if dep.Version != "" {
+			return dep.Version
+		}
+	}
+	if info.Main.Path == pinpointModule && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "unknown"
 }
