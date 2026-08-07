@@ -1,0 +1,4 @@
+# Not an Actions file: it has jobs, but nothing runs them on an event.
+jobs:
+  nightly:
+    schedule: "0 3 * * *"

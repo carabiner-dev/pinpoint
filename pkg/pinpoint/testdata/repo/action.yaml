@@ -1,0 +1,9 @@
+name: root-action
+description: The composite action this repository publishes from its root
+runs:
+  using: composite
+  steps:
+    - name: Checkout the caller
+      uses: actions/checkout@v5
+    - run: bash "${GITHUB_ACTION_PATH}/scan.sh"
+      shell: bash

@@ -58,7 +58,7 @@ type Status struct {
 // that are outdated. Pass nil to skip the lookups: the statuses then only
 // know whether the references are pinned.
 func ScanStatus(ctx context.Context, resolver Resolver, path string) (*Status, error) {
-	report, err := NewScanner(WithActions(true)).Scan(path)
+	report, err := NewScanner().Scan(path)
 	if err != nil {
 		return nil, err
 	}

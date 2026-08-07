@@ -26,9 +26,10 @@ func addPin(parent *cobra.Command) {
 		Short: "pin the action references of the workflows to a commit hash",
 		Long: appName + ` pin: pin action references to a commit hash
 
-The pin subcommand scans the GitHub Actions workflows found in a
-directory (the current one by default) and rewrites in place the action
-references that are not pinned to a commit hash. Each entry is pinned to
+The pin subcommand scans the GitHub Actions workflows and action
+definitions found in a directory (the current one by default) and
+rewrites in place the action references that are not pinned to a commit
+hash. Each entry is pinned to
 the commit the version it uses points at, leaving the version in a
 comment next to the reference:
 
@@ -45,9 +46,7 @@ same pass. It is the flag that acts on what check reports as updatable.
 
 Using --all, pinpoint looks at every reference instead of only the
 unpinned ones. Combined with --update this moves the whole repository
-to the newest releases. The scan is also widened to the action
-definitions (action.yml files) found in the repository, skipping the
-.git, vendor, node_modules and testdata directories.
+to the newest releases.
 
 References that cannot be pinned to a repository commit (local actions
 and those run from container images) are left untouched.
@@ -73,9 +72,7 @@ to a handful of scans per hour.
 				return err
 			}
 
-			report, err := pinpoint.NewScanner(
-				pinpoint.WithActions(opts.All),
-			).Scan(opts.Path)
+			report, err := pinpoint.NewScanner().Scan(opts.Path)
 			if err != nil {
 				return err
 			}

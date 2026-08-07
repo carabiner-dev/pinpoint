@@ -1,6 +1,6 @@
 # 📍Pinpoint
 
-Pinpoint is a GitHub Actions pinning manager. It scans the workflows of a
+Pinpoint is a GitHub Actions pinning manager. It scans the Actions code of a
 repository and reports the action references that are not pinned to a commit
 hash, pins them in place, and keeps the pinned ones up to date. The same scan
 can be exported as an in-toto attestation or as an SBOM, naming every action
@@ -51,9 +51,24 @@ export GITHUB_TOKEN=$(gh auth token)
 Commands that need no version data (`check --offline`, `status --offline`)
 make no API calls at all.
 
+## What gets scanned
+
+Actions code is not only what sits in `.github/workflows`: repositories
+publish composite actions from their root, keep starter workflows under
+`.github/workflow-templates` and hold the workflows of a monorepo's
+subprojects wherever they belong. Every command scans them all.
+
+Pinpoint finds them by where they sit and by what they hold. Every YAML file
+under a forge's workflows directory is a workflow and every `action.yml` in
+the tree is an action definition; on top of those, any other YAML file
+declaring the jobs it runs on an event is read as a workflow, and any file
+saying how an action runs is read as an action definition. The `.git`,
+`vendor`, `node_modules` and `testdata` directories are never walked, and
+the YAML a repository keeps for anything else is left alone.
+
 ## Checking a repository
 
-`pinpoint check` scans the workflows of a directory (the current one by
+`pinpoint check` scans the Actions code of a directory (the current one by
 default) and lists the references that are not pinned, along with the
 version each one would be pinned to. It also reports the pinned references
 that have a newer release, covering both halves of keeping actions under
@@ -110,8 +125,7 @@ Two flags widen what a run does:
 - `--update` pins the references to the latest release of each action
   instead of the version they are using, acting on what check reports as
   updatable.
-- `--all` looks at every reference instead of only the unpinned ones, and
-  also scans the action definitions (`action.yml` files) in the repository.
+- `--all` looks at every reference instead of only the unpinned ones.
   Combined with `--update` it moves the whole repository to the newest
   releases.
 

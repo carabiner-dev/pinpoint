@@ -28,9 +28,12 @@ const (
 	KindLocal Kind = "local"
 )
 
-// Reference captures a `uses:` action reference found in a workflow.
+// Reference captures a `uses:` action reference found in a workflow or in
+// an action definition.
 type Reference struct {
-	// Workflow is the path of the workflow file, relative to the scan root.
+	// Workflow is the path of the file defining the reference, relative to
+	// the scan root: a workflow or the action definition of a composite
+	// action.
 	Workflow string
 
 	// Job is the ID of the job where the reference was found.

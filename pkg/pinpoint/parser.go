@@ -10,23 +10,34 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// parseWorkflow reads the YAML source of a workflow and returns the action
-// references found in its jobs, in the order they appear in the file. The
-// references are returned without the workflow path, the caller is expected
-// to complete them.
-func parseWorkflow(data []byte) ([]Reference, error) {
+// parseDocument parses the YAML source of a file and returns the mapping at
+// its root. Files holding anything else (an empty document, a list, a plain
+// scalar) return no node: they define neither a workflow nor an action.
+func parseDocument(data []byte) (*yaml.Node, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
+		return nil, fmt.Errorf("parsing YAML: %w", err)
 	}
 
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
 		return nil, nil
 	}
 
-	jobs := mapValue(doc.Content[0], "jobs")
-	if jobs == nil || jobs.Kind != yaml.MappingNode {
+	root := resolve(doc.Content[0])
+	if root == nil || root.Kind != yaml.MappingNode {
 		return nil, nil
+	}
+	return root, nil
+}
+
+// parseWorkflow returns the action references found in the jobs of a
+// workflow, in the order they appear in the file. The references are
+// returned without the workflow path, the caller is expected to complete
+// them.
+func parseWorkflow(doc *yaml.Node) []Reference {
+	jobs := mapValue(doc, "jobs")
+	if jobs == nil || jobs.Kind != yaml.MappingNode {
+		return nil
 	}
 
 	var refs []Reference
@@ -54,28 +65,14 @@ func parseWorkflow(data []byte) ([]Reference, error) {
 
 		refs = append(refs, parseSteps(mapValue(job, "steps"), jobID)...)
 	}
-	return refs, nil
+	return refs
 }
 
-// parseAction reads the YAML source of an action definition and returns the
-// action references used by its steps. Only composite actions run steps, any
-// other action kind yields no references.
-func parseAction(data []byte) ([]Reference, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parsing action YAML: %w", err)
-	}
-
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return nil, nil
-	}
-
-	runs := mapValue(doc.Content[0], "runs")
-	if runs == nil || runs.Kind != yaml.MappingNode {
-		return nil, nil
-	}
-
-	return parseSteps(mapValue(runs, "steps"), ""), nil
+// parseAction returns the action references used by the steps of an action
+// definition. Only composite actions run steps, any other action kind yields
+// no references.
+func parseAction(doc *yaml.Node) []Reference {
+	return parseSteps(mapValue(mapValue(doc, "runs"), "steps"), "")
 }
 
 // parseSteps returns the references used by the steps in a YAML sequence,

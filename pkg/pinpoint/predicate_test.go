@@ -23,14 +23,21 @@ func TestPredicate(t *testing.T) {
 
 	predicate := report.Predicate(nil)
 
-	expectedSummary := PredicateSummary{Workflows: 1, References: 6, Pinned: 3, Unpinned: 3}
+	expectedSummary := PredicateSummary{Workflows: 2, Actions: 2, References: 9, Pinned: 3, Unpinned: 6}
 	if predicate.Summary != expectedSummary {
 		t.Errorf("summary = %+v, want %+v", predicate.Summary, expectedSummary)
 	}
 
-	expectedWorkflows := []string{filepath.Join(".github", "workflows", "ci.yaml")}
+	expectedWorkflows := []string{starter, ciWorkflow}
 	if !reflect.DeepEqual(predicate.Workflows, expectedWorkflows) {
 		t.Errorf("workflows = %+v, want %+v", predicate.Workflows, expectedWorkflows)
+	}
+
+	// References found in a composite action are attributed to the action
+	// definition, so the files it lists have to be there too.
+	expectedActions := []string{localAction, rootAction}
+	if !reflect.DeepEqual(predicate.Actions, expectedActions) {
+		t.Errorf("actions = %+v, want %+v", predicate.Actions, expectedActions)
 	}
 
 	if len(predicate.References) != len(report.References) {
@@ -38,16 +45,14 @@ func TestPredicate(t *testing.T) {
 	}
 
 	expectedFirst := PredicateReference{
-		Workflow:   filepath.Join(".github", "workflows", "ci.yaml"),
-		Line:       12,
-		Job:        "build",
-		Step:       "Checkout code",
-		Uses:       "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8",
+		Workflow:   localAction,
+		Line:       7,
+		Step:       "Setup node",
+		Uses:       "actions/setup-node@v4",
 		Kind:       KindAction,
 		Owner:      "actions",
-		Repository: "actions/checkout",
-		Version:    "08c6903cd8c0fde910a37f88322edcfb5dd907a8",
-		Pinned:     true,
+		Repository: "actions/setup-node",
+		Version:    "v4",
 	}
 	if predicate.References[0] != expectedFirst {
 		t.Errorf("first reference = %+v, want %+v", predicate.References[0], expectedFirst)

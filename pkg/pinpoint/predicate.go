@@ -42,10 +42,15 @@ type Predicate struct {
 	// Workflows lists the workflow files that were scanned.
 	Workflows []string `json:"workflows"`
 
+	// Actions lists the action definitions that were scanned. References
+	// found in a composite action are attributed to the file listed here,
+	// not to a workflow.
+	Actions []string `json:"actions"`
+
 	// Summary has the reference counts of the scan.
 	Summary PredicateSummary `json:"summary"`
 
-	// References are all the action references found in the workflows.
+	// References are all the action references found in the scanned files.
 	References []PredicateReference `json:"references"`
 }
 
@@ -102,6 +107,7 @@ func toolDescriptor() ToolDescriptor {
 // overall result without iterating the reference list.
 type PredicateSummary struct {
 	Workflows  int `json:"workflows"`
+	Actions    int `json:"actions"`
 	References int `json:"references"`
 	Pinned     int `json:"pinned"`
 	Unpinned   int `json:"unpinned"`
@@ -115,7 +121,9 @@ type PredicateSummary struct {
 // Every field is always rendered, even when empty, so that policies can read
 // them without having to guard each expression with has().
 type PredicateReference struct {
-	// Workflow is the path of the workflow file, relative to the repository.
+	// Workflow is the path of the file defining the reference, relative to
+	// the repository: a workflow or the action definition of a composite
+	// action.
 	Workflow string `json:"workflow"`
 
 	// Line is the line in the workflow file defining the reference.
@@ -172,14 +180,17 @@ func (r *Report) Predicate(updates *Updates) *Predicate {
 		Date:           time.Now().UTC().Format(time.RFC3339),
 		UpdatesChecked: updates.LatestChecked(),
 		Workflows:      []string{},
+		Actions:        []string{},
 		References:     []PredicateReference{},
 		Summary: PredicateSummary{
 			Workflows:  len(r.Workflows),
+			Actions:    len(r.Actions),
 			References: len(r.References),
 		},
 	}
 
 	p.Workflows = append(p.Workflows, r.Workflows...)
+	p.Actions = append(p.Actions, r.Actions...)
 
 	for _, ref := range r.References {
 		pinned := ref.IsPinned()

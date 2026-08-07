@@ -71,7 +71,7 @@ func BuildSBOM(ctx context.Context, resolver Resolver, path string, opts ...SBOM
 		return nil, err
 	}
 
-	report, err := NewScanner(WithActions(true)).Scan(path)
+	report, err := NewScanner().Scan(path)
 	if err != nil {
 		return nil, err
 	}

@@ -26,10 +26,16 @@ func addCheck(parent *cobra.Command) {
 		Short: "list the action references that are not pinned to a hash",
 		Long: appName + ` check: list unpinned action references
 
-The check subcommand scans the GitHub Actions workflows found in a
-directory (the current one by default) and lists the action references
-that are not pinned to a commit hash, along with the version each one
-would be pinned to by ` + appName + ` pin.
+The check subcommand scans the GitHub Actions code found in a directory
+(the current one by default) and lists the action references that are
+not pinned to a commit hash, along with the version each one would be
+pinned to by ` + appName + ` pin.
+
+The scan is not limited to .github/workflows: action definitions
+(action.yml files) are read wherever they sit, and so is any other YAML
+file holding a workflow, such as the starter workflows under
+.github/workflow-templates. The .git, vendor, node_modules and testdata
+directories are never walked.
 
 Pinpoint also looks up the versions of the references that are pinned
 and reports those that have a newer release, so that the output covers
