@@ -10,7 +10,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
-	github.com/protobom/protobom v0.5.8
+	github.com/protobom/protobom v0.6.0
 	github.com/spf13/cobra v1.10.2
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/protobuf v1.36.12
@@ -24,6 +24,7 @@ require (
 	github.com/anchore/go-struct-converter v0.1.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/carabiner-dev/signer v0.4.3 // indirect
+	github.com/carabiner-dev/spdx3 v0.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chainguard-dev/clog v1.8.0 // indirect
 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
@@ -54,7 +55,7 @@ require (
 	github.com/samber/slog-common v0.21.0 // indirect
 	github.com/samber/slog-zap/v2 v2.6.4 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
-	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spdx/tools-golang v0.5.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
