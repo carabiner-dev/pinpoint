@@ -10,7 +10,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
-	github.com/protobom/protobom v0.6.2
+	github.com/protobom/protobom v0.7.0
 	github.com/spf13/cobra v1.10.2
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/protobuf v1.36.12
