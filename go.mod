@@ -6,13 +6,13 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/carabiner-dev/command v0.3.4
 	github.com/carabiner-dev/github v0.2.3
-	github.com/carabiner-dev/termtable v1.1.0
+	github.com/carabiner-dev/termtable v1.1.1
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
 	github.com/protobom/protobom v0.7.0
 	github.com/spf13/cobra v1.10.2
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -63,8 +63,8 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	sigs.k8s.io/release-utils v0.12.5 // indirect
