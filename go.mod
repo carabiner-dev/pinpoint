@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/carabiner-dev/command v0.3.4
-	github.com/carabiner-dev/github v0.2.3
+	github.com/carabiner-dev/github v0.2.4
 	github.com/carabiner-dev/termtable v1.1.1
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/uuid v1.6.0
@@ -62,7 +62,7 @@ require (
 	go.uber.org/zap v1.28.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
