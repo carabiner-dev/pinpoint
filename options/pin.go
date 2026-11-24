@@ -17,12 +17,13 @@ type Pin struct {
 
 	// All makes pinpoint look at every action reference instead of only
 	// the unpinned ones. It also widens the scan to the action definitions
-	// in the repository.
+	// in the repository. It is on by default.
 	All bool
 
 	// Update makes pinpoint pin the references to the latest release of
 	// each action instead of to the version they already track. It is the
-	// counterpart of the update reporting of the check subcommand.
+	// counterpart of the update reporting of the check subcommand. It is
+	// on by default.
 	Update bool
 
 	// Yes writes the changes without asking for confirmation first.
@@ -33,11 +34,11 @@ type Pin struct {
 func (po *Pin) AddFlags(cmd *cobra.Command) {
 	po.Scan.AddFlags(cmd)
 	cmd.PersistentFlags().BoolVar(
-		&po.All, "all", false,
+		&po.All, "all", true,
 		"check every action reference, not just the unpinned ones",
 	)
 	cmd.PersistentFlags().BoolVar(
-		&po.Update, "update", false,
+		&po.Update, "update", true,
 		"pin to the latest release of each action instead of to the version in use",
 	)
 	cmd.PersistentFlags().BoolVarP(

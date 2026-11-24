@@ -28,25 +28,26 @@ func addPin(parent *cobra.Command) {
 
 The pin subcommand scans the GitHub Actions workflows and action
 definitions found in a directory (the current one by default) and
-rewrites in place the action references that are not pinned to a commit
-hash. Each entry is pinned to
-the commit the version it uses points at, leaving the version in a
+rewrites in place their action references, pinning each entry to the
+commit of the latest release of its action and leaving the version in a
 comment next to the reference:
 
   uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-The comment records the most precise tag naming the commit, so an entry
-tracking a major version (@v5) is pinned with the patch release it
-resolved to. Any comment already trailing the entry is replaced, it is
-the slot where the version a hash corresponds to is kept by convention.
+The comment records the most precise tag naming the commit. Any comment
+already trailing the entry is replaced, it is the slot where the version
+a hash corresponds to is kept by convention.
 
-Using --update, references are pinned to the latest release of each
-action instead of to the version they are using, updating them in the
-same pass. It is the flag that acts on what check reports as updatable.
+By default pinpoint looks at every reference, pinned or not, and moves
+each one to the latest release of its action, so a run brings the whole
+repository to the newest releases. Two flags narrow that down:
 
-Using --all, pinpoint looks at every reference instead of only the
-unpinned ones. Combined with --update this moves the whole repository
-to the newest releases.
+Using --update=false, references are pinned to the version they are
+using instead of to the latest release, so an entry tracking a major
+version (@v5) is pinned with the patch release it resolved to.
+
+Using --all=false, pinpoint only looks at the references that are not
+pinned to a commit hash and leaves the pinned ones alone.
 
 References that cannot be pinned to a repository commit (local actions
 and those run from container images) are left untouched.

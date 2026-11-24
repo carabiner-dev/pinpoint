@@ -101,8 +101,8 @@ reporting which references are pinned.
 
 ## Pinning the references
 
-`pinpoint pin` rewrites the unpinned references in place, pinning each entry
-to the commit its version points at and recording the version in the
+`pinpoint pin` rewrites the references in place, pinning each entry to the
+commit of the latest release of its action and recording the version in the
 trailing comment. The changes are listed first and confirmed with a
 question, so a run can be inspected before it touches the workflows:
 
@@ -120,14 +120,14 @@ Pinned 1 action reference(s) in 1 file(s).
 Use `--yes` to skip the question, which is also what unattended runs need:
 with no one to answer, pinpoint stops instead of guessing.
 
-Two flags widen what a run does:
+By default a run looks at every reference, pinned or not, and moves each one
+to the latest release of its action, acting on what check reports as
+updatable. Two flags narrow what a run does:
 
-- `--update` pins the references to the latest release of each action
-  instead of the version they are using, acting on what check reports as
-  updatable.
-- `--all` looks at every reference instead of only the unpinned ones.
-  Combined with `--update` it moves the whole repository to the newest
-  releases.
+- `--update=false` pins the references to the version they are using
+  instead of the latest release of each action.
+- `--all=false` looks only at the unpinned references, leaving those already
+  pinned to a commit alone.
 
 References that cannot be pinned to a repository commit (local actions and
 those run from container images) are left untouched.
